@@ -13,7 +13,7 @@ class MangaContentDownloader {
         // 简化的并行处理配置
         this.parallelConfig = {
             enabled: options.parallel !== false, // 默认启用并行处理
-            maxConcurrent: options.maxConcurrent || 3, // 默认最大并发数为3
+            maxConcurrent: options.maxConcurrent || 2, // 降低默认并发数为2以节省内存
             retryAttempts: options.retryAttempts || 2, // 重试次数
             retryDelay: options.retryDelay || 1000 // 重试延迟(ms)
         };
@@ -25,6 +25,10 @@ class MangaContentDownloader {
         this.maxBrowsers = this.parallelConfig.enabled && this.parallelConfig.maxConcurrent > 1 
             ? this.parallelConfig.maxConcurrent - 1 
             : 0;
+        
+        // Chrome扩展路径配置
+        this.extensionPath = 'C:\\Users\\17146\\Downloads\\AdBlock_v5.0.4';
+        console.log(`🔌 Chrome扩展路径: ${this.extensionPath}`);
 
         // 图片数据缓存
         this.imageBlobs = new Map();
@@ -45,7 +49,7 @@ class MangaContentDownloader {
     async init() {
         console.log('🚀 启动浏览器...');
         // const extensionPath = 'C:\\Users\\likx\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\cfhdojbkjhnklbpkdaibdccddilifddb'; 
-        const extensionPath = 'C:\\Users\\likx\\Downloads\\AdBlock_v5.0.4';
+        const extensionPath = 'C:\\Users\\likx\\Downloads\\chrome';
 
 
         // // 方案1: 使用普通启动 + 扩展
@@ -65,23 +69,48 @@ class MangaContentDownloader {
             headless: false,
             channel: 'chrome',
             args: [
-                // `--disable-extensions-except=${extensionPath}`,
-                // `--load-extension=${extensionPath}`
+                // 扩展插件加载
+                `--load-extension=${this.extensionPath}`,
+                `--disable-extensions-except=${this.extensionPath}`,
+                // 基础优化参数（稳定性优先）
             ],
-            ignoreDefaultArgs: ['--disable-component-extensions-with-background-pages']
         });
-
-        const [sw] = context.serviceWorkers();
-        const serviceWorker = sw || await context.waitForEvent('serviceworker');
-        const extensionId = serviceWorker.url().split('/')[2];
-
         // 创建主页面（向后兼容）
         this.page = await context.newPage();
         this.context = context;
 
-        // 设置用户代理
+        // 设置用户代理和优化页面
         await this.page.setExtraHTTPHeaders({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        });
+
+        await this.page.setDefaultTimeout(60000);
+        await this.page.setDefaultNavigationTimeout(60000);
+        await this.page.setViewportSize({ width: 1280, height: 720 }); // 减小视口尺寸
+
+        // 主浏览器也添加资源拦截以节省内存（轻量级拦截）
+        await this.page.route('**/*', (route) => {
+            try {
+                const request = route.request();
+                const resourceType = request.resourceType();
+                const url = request.url();
+                
+                // 只拦截明显不需要的资源，避免过度拦截导致问题
+                if (url.includes('google-analytics') || 
+                    url.includes('googletagmanager') ||
+                    url.includes('doubleclick.net') ||
+                    url.includes('googlesyndication') ||
+                    url.includes('facebook.com/tr')) {
+                    route.abort();
+                } else if (resourceType === 'font' && !url.includes('colamanga.com')) {
+                    route.abort(); 
+                } else {
+                    route.continue();
+                }
+            } catch (error) {
+                // 出错时继续请求
+                route.continue();
+            }
         });
 
         // 监听浏览器控制台消息
@@ -94,6 +123,9 @@ class MangaContentDownloader {
 
         // 设置 blob 图片捕获
         await this.setupBlobCapture();
+        
+        // 为主浏览器添加内存清理
+        await this.setupMemoryCleanup(this.page);
 
         // 关闭AdBlock扩展自动打开的页面
         // await this.closeAdBlockPage();
@@ -128,18 +160,50 @@ class MangaContentDownloader {
             try {
                 console.log(`🚀 正在创建浏览器实例 ${i}...`);
                 
-                // 创建独立的浏览器上下文
+                // 创建独立的浏览器上下文（内存优化版 - 修复启动问题）
                 const context = await chromium.launchPersistentContext('', {
                     headless: false,
                     channel: 'chrome',
-                    args: [],
-                    ignoreDefaultArgs: ['--disable-component-extensions-with-background-pages']
+                    args: [
+                        // 扩展插件加载
+                        `--load-extension=${this.extensionPath}`,
+                        `--disable-extensions-except=${this.extensionPath}`,
+                        // 基础优化参数（稳定性优先）
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-web-security',
+                        '--disable-features=TranslateUI',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--disable-back-forward-cache',
+                        // 内存优化
+                        '--disable-background-networking',
+                        '--disable-default-apps',
+                        '--disable-sync',
+                        '--disable-translate',
+                        '--mute-audio',
+                        '--no-first-run',
+                        '--disable-plugins'
+                        // 注意：移除了 '--disable-extensions' 和 '--disable-component-extensions-with-background-pages'
+                        // 因为我们需要加载扩展
+                    ],
+                    ignoreDefaultArgs: [
+                        '--enable-automation',
+                        '--disable-extensions',
+                        '--disable-component-extensions-with-background-pages'
+                    ]
                 });
 
+                // 等待并获取扩展信息
+                const [sw] = context.serviceWorkers();
+                const serviceWorker = sw || await context.waitForEvent('serviceworker');
                 // 创建主页面
                 const page = await context.newPage();
                 
-                // 设置页面配置
+                // 设置页面配置（内存优化版）
                 await page.setExtraHTTPHeaders({
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 });
@@ -147,8 +211,39 @@ class MangaContentDownloader {
                 await page.setDefaultTimeout(60000);
                 await page.setDefaultNavigationTimeout(60000);
                 
+                // 优化页面设置
+                await page.setViewportSize({ width: 1280, height: 720 }); // 减小视口尺寸
+                
+                // 轻量级资源拦截以节省内存
+                await page.route('**/*', (route) => {
+                    try {
+                        const request = route.request();
+                        const resourceType = request.resourceType();
+                        const url = request.url();
+                        
+                        // 只拦截明显不需要的资源，避免过度拦截导致问题
+                        if (url.includes('google-analytics') || 
+                            url.includes('googletagmanager') ||
+                            url.includes('doubleclick.net') ||
+                            url.includes('googlesyndication') ||
+                            url.includes('facebook.com/tr')) {
+                            route.abort();
+                        } else if (resourceType === 'font' && !url.includes('colamanga.com')) {
+                            route.abort(); 
+                        } else {
+                            route.continue();
+                        }
+                    } catch (error) {
+                        // 出错时继续请求
+                        route.continue();
+                    }
+                });
+                
                 // 设置 blob 图片捕获
                 await this.setupBlobCaptureForPage(page);
+                
+                // 内存清理
+                await this.setupMemoryCleanup(page);
                 
                 const browserInstance = {
                     id: i,
@@ -229,6 +324,93 @@ class MangaContentDownloader {
         });
     }
 
+    /**
+     * 设置内存清理机制
+     */
+    async setupMemoryCleanup(page) {
+        // 定期清理内存
+        setInterval(async () => {
+            try {
+                await page.evaluate(() => {
+                    // 清理过期的 blob URLs
+                    if (window.__blobUrls) {
+                        const now = Date.now();
+                        window.__blobUrls = window.__blobUrls.filter(item => {
+                            if (now - item.timestamp > 300000) { // 5分钟过期
+                                try {
+                                    URL.revokeObjectURL(item.blobUrl);
+                                } catch (e) {}
+                                return false;
+                            }
+                            return true;
+                        });
+                    }
+                    
+                    // 强制垃圾回收（如果可用）
+                    if (window.gc) {
+                        window.gc();
+                    }
+                    
+                    // 清理图片缓存
+                    const images = document.querySelectorAll('img');
+                    images.forEach(img => {
+                        if (img.src && img.src.startsWith('blob:')) {
+                            const rect = img.getBoundingClientRect();
+                            // 如果图片不在视口内，释放其资源
+                            if (rect.bottom < 0 || rect.top > window.innerHeight) {
+                                img.src = '';
+                            }
+                        }
+                    });
+                    
+                    // 清理未使用的 DOM 元素
+                    const oldElements = document.querySelectorAll('[data-processed="true"]');
+                    oldElements.forEach(el => {
+                        if (el.getBoundingClientRect().bottom < -1000) {
+                            el.remove();
+                        }
+                    });
+                });
+            } catch (error) {
+                // 忽略清理错误
+            }
+        }, 60000); // 每分钟清理一次
+    }
+
+    /**
+     * 重置浏览器实例以释放内存
+     */
+    async resetBrowserForMemory(browserInstance) {
+        try {
+            console.log(`🔄 重置浏览器实例 ${browserInstance.id} 以释放内存...`);
+            
+            // 导航到空白页释放资源
+            await browserInstance.page.goto('about:blank');
+            
+            // 清理页面内存
+            await browserInstance.page.evaluate(() => {
+                // 清理全局变量
+                if (window.__blobUrls) {
+                    window.__blobUrls.forEach(item => {
+                        try {
+                            URL.revokeObjectURL(item.blobUrl);
+                        } catch (e) {}
+                    });
+                    window.__blobUrls = [];
+                }
+                
+                // 强制垃圾回收
+                if (window.gc) {
+                    window.gc();
+                }
+            });
+            
+            console.log(`✅ 浏览器实例 ${browserInstance.id} 内存重置完成`);
+        } catch (error) {
+            console.log(`⚠️ 重置浏览器实例 ${browserInstance.id} 失败: ${error.message}`);
+        }
+    }
+
 
 
 
@@ -252,68 +434,6 @@ class MangaContentDownloader {
             };
         });
     }
-
-    /**
-     * 关闭AdBlock扩展自动打开的页面 - 增强版本
-     */
-    async closeAdBlockPage() {
-        try {
-            console.log('🔍 检查并关闭AdBlock页面...');
-
-            // 获取浏览器上下文中的所有页面
-            const context = this.page.context();
-            const pages = context.pages();
-
-            console.log(`📄 当前浏览器有 ${pages.length} 个页面`);
-
-            let closedCount = 0;
-
-            // 检查所有页面
-            for (let i = 0; i < pages.length; i++) {
-                const page = pages[i];
-                try {
-                    const pageUrl = page.url();
-                    console.log(`📄 检查页面 ${i + 1}: ${pageUrl}`);
-
-                    // 检查是否是AdBlock相关页面
-                    if (pageUrl.includes('getadblock.com') ||
-                        pageUrl.includes('chrome-extension://') ||
-                        pageUrl.includes('adblock') ||
-                        (page !== this.page)) {
-
-                        console.log(`🚫 发现AdBlock页面，正在关闭: ${pageUrl}`);
-
-                        // 如果不是主页面，则关闭它
-                        if (page !== this.page) {
-                            await page.close();
-                            closedCount++;
-                            console.log(`✅ 已关闭AdBlock页面`);
-                        } else {
-                            // 如果是主页面，导航到空白页
-                            await this.page.goto('about:blank', {
-                                waitUntil: 'domcontentloaded',
-                                timeout: 10000
-                            });
-                            console.log(`✅ 主页面已导航到空白页`);
-                        }
-                    }
-                } catch (pageError) {
-                    console.log(`⚠️ 检查页面时出错: ${pageError.message}`);
-                }
-            }
-
-            if (closedCount > 0) {
-                console.log(`✅ 总共关闭了 ${closedCount} 个AdBlock页面`);
-            } else {
-                console.log(`✅ 没有发现需要关闭的AdBlock页面`);
-            }
-
-        } catch (error) {
-            console.log(`⚠️ 关闭AdBlock页面时出错: ${error.message}`);
-            // 不抛出错误，继续执行
-        }
-    }
-
     /**
      * 获取漫画简介信息并下载封面
      */
@@ -786,6 +906,8 @@ class MangaContentDownloader {
                 } finally {
                     // 确保释放浏览器实例
                     if (browserInstance) {
+                        // 每处理完一个漫画就重置浏览器内存
+                        await this.resetBrowserForMemory(browserInstance);
                         console.log(`🔓 [${mangaIndex}] 释放浏览器实例 ${browserInstance.id}`);
                         this.releaseBrowser(browserInstance);
                     }
@@ -2360,7 +2482,7 @@ class MangaContentDownloader {
                 }
 
                 // 在浏览器中执行 blob URL 下载
-                const downloadResult = await this.page.evaluate(async (blobUrl, fileName) => {
+                const downloadResult = await this.page.evaluate(async ({ blobUrl, fileName }) => {
                     try {
                         console.log(`尝试从 Blob URL 获取数据: ${blobUrl}`);
 
@@ -2401,7 +2523,7 @@ class MangaContentDownloader {
                             error: error.message
                         };
                     }
-                }, imageInfo.blobUrl, fileName);
+                }, { blobUrl: imageInfo.blobUrl, fileName: fileName });
 
                 if (downloadResult.success) {
                     // 将 base64 数据转换为 Buffer 并保存

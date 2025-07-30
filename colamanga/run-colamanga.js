@@ -8,7 +8,7 @@ class ColamangaCrawler {
         this.outputDir = '/Users/likaixuan/Documents/manga';
         this.parallelOptions = {
             parallel: options.parallel !== false, // 默认启用并行
-            maxConcurrent: options.maxConcurrent || 3, // 简化为3个并发
+            maxConcurrent: options.maxConcurrent || 2, // 降低为2个并发以节省内存
             retryAttempts: options.retryAttempts || 2,
             retryDelay: options.retryDelay || 1000
         };
