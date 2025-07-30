@@ -13,7 +13,8 @@ class MangaIdCollector {
     async init() {
         console.log('🚀 启动浏览器...');
         this.browser = await chromium.launch({
-            headless: false,
+            headless: true,
+            channel: 'chrome',
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         this.page = await this.browser.newPage();
