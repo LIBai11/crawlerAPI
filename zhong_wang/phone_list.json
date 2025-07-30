@@ -1,0 +1,143 @@
+{
+  "phones": [
+    {
+      "phone": "19269465816",
+      "tokenId": 10,
+      "registeredAt": "2025-07-25T01:51:53.173Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:15:59.354Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19219302169",
+      "tokenId": 11,
+      "registeredAt": "2025-07-25T01:52:18.623Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:00.144Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "17042059283",
+      "tokenId": 12,
+      "registeredAt": "2025-07-25T01:52:44.393Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:00.975Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19269442712",
+      "tokenId": 13,
+      "registeredAt": "2025-07-25T01:53:06.362Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:01.788Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19219392409",
+      "tokenId": 5,
+      "registeredAt": "2025-07-25T08:30:31.987Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:02.580Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19216896539",
+      "tokenId": 6,
+      "registeredAt": "2025-07-25T08:31:02.564Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:03.426Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19297003462",
+      "tokenId": 7,
+      "registeredAt": "2025-07-25T09:11:04.413Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:04.244Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19237259604",
+      "tokenId": 1,
+      "registeredAt": "2025-07-28T02:46:27.007Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:05.055Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19299400443",
+      "tokenId": 2,
+      "registeredAt": "2025-07-28T02:47:03.852Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:05.830Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19212758604",
+      "tokenId": 3,
+      "registeredAt": "2025-07-28T02:47:33.147Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:06.666Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "17030306559",
+      "tokenId": 4,
+      "registeredAt": "2025-07-28T02:48:02.274Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:07.453Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19224094914",
+      "tokenId": 5,
+      "registeredAt": "2025-07-28T02:48:31.442Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:08.251Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19267275962",
+      "tokenId": 6,
+      "registeredAt": "2025-07-28T02:49:05.262Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:09.039Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19315287941",
+      "tokenId": 7,
+      "registeredAt": "2025-07-28T02:49:31.509Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:09.861Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19277283794",
+      "tokenId": 8,
+      "registeredAt": "2025-07-28T02:49:57.135Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:10.691Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19269400238",
+      "tokenId": 9,
+      "registeredAt": "2025-07-28T02:50:28.548Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:11.521Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    },
+    {
+      "phone": "19224094746",
+      "tokenId": 10,
+      "registeredAt": "2025-07-28T02:50:58.001Z",
+      "tokenValid": true,
+      "lastTokenTest": "2025-07-28T15:16:12.310Z",
+      "tokenTestError": "Token校验失败 - code: 403"
+    }
+  ],
+  "lastUpdated": "2025-07-28T15:16:12.311Z",
+  "totalCount": 17,
+  "description": "已注册的手机号列表"
+}

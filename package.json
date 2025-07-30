@@ -1,0 +1,33 @@
+{
+  "name": "word-document-organizer",
+  "version": "1.0.0",
+  "description": "Organize Word documents based on table of contents",
+  "main": "organize-word-docs.js",
+  "scripts": {
+    "start": "node run-organizer.js",
+    "organize": "node organize-word-docs.js"
+  },
+  "dependencies": {
+    "ali-oss": "^6.23.0",
+    "axios": "^1.10.0",
+    "crypto": "^1.0.1",
+    "crypto-js": "^4.2.0",
+    "fs-extra": "^11.3.0",
+    "http-proxy-agent": "^7.0.0",
+    "https-proxy-agent": "^7.0.0",
+    "mammoth": "^1.6.0",
+    "path": "^0.12.7",
+    "pdf-lib": "^1.17.1",
+    "pdfkit": "^0.15.0",
+    "sharp": "^0.34.3",
+    "uuid": "^11.1.0"
+  },
+  "keywords": [
+    "word",
+    "document",
+    "organizer",
+    "table-of-contents"
+  ],
+  "author": "",
+  "license": "MIT"
+}
