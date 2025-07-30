@@ -7,10 +7,8 @@ class ColamangaCrawler {
     constructor(options = {}) {
         this.outputDir = '/Users/likaixuan/Documents/manga';
         this.parallelOptions = {
-            parallel: false, // 默认启用并行
-            maxConcurrent: options.maxConcurrent || 1,
-            chapterConcurrent: options.chapterConcurrent || 1, // 提高章节并发数
-            imageConcurrent: options.imageConcurrent || 5,     // 提高图片并发数
+            parallel: options.parallel !== false, // 默认启用并行
+            maxConcurrent: options.maxConcurrent || 3, // 简化为3个并发
             retryAttempts: options.retryAttempts || 2,
             retryDelay: options.retryDelay || 1000
         };
@@ -44,11 +42,9 @@ class ColamangaCrawler {
         } = options;
 
         console.log('📥 开始下载漫画内容...\n');
-        console.log('🔧 并行处理配置:');
-        console.log(`   - 启用状态: ${this.parallelOptions.parallel ? '是' : '否'}`);
+        console.log('🔧 下载配置:');
+        console.log(`   - 并行模式: ${this.parallelOptions.parallel ? '启用' : '禁用'}`);
         console.log(`   - 最大并发数: ${this.parallelOptions.maxConcurrent}`);
-        console.log(`   - 章节并发数: ${this.parallelOptions.chapterConcurrent}`);
-        console.log(`   - 图片并发数: ${this.parallelOptions.imageConcurrent}`);
         console.log('');
 
         const downloader = new MangaContentDownloader(this.parallelOptions);
@@ -134,26 +130,23 @@ class ColamangaCrawler {
 单个漫画下载:
   node run-colamanga.js download --id ap101511 --name "漫画名称" --chapter 1
 
-并行配置选项:
-  --maxConcurrent 4              # 同时处理的漫画数量（默认: 4）
-  --chapterConcurrent 2          # 每个漫画的章节并发数（默认: 2）
-  --imageConcurrent 5            # 每个章节的图片并发数（默认: 5）
+简化的配置选项:
+  --maxConcurrent 3              # 同时处理的漫画数量（默认: 3）
   --no-parallel                  # 禁用并行处理，使用串行模式
-  --retryAttempts 2              # 重试次数（默认: 2）
-  --retryDelay 1000              # 重试延迟毫秒数（默认: 1000）
+  --maxChapters 50               # 限制最大下载章节数
 
 示例:
   # 收集所有漫画ID
   node run-colamanga.js collect
   
-  # 下载前3个漫画的第1章
+  # 下载前3个漫画
   node run-colamanga.js download --start 0 --count 3
   
   # 执行完整流程并只下载前5个漫画
   node run-colamanga.js full --count 5
   
-  # 使用自定义并行配置下载
-  node run-colamanga.js download --maxConcurrent 6 --chapterConcurrent 3 --imageConcurrent 8
+  # 使用5个并发下载
+  node run-colamanga.js download --maxConcurrent 5
   
   # 禁用并行处理（串行模式）
   node run-colamanga.js download --no-parallel
@@ -187,7 +180,7 @@ function parseArgs() {
             const value = args[i + 1];
 
             if (value !== undefined && !value.startsWith('--')) {
-                if (['start', 'count', 'chapter', 'maxConcurrent', 'chapterConcurrent', 'imageConcurrent', 'retryAttempts', 'retryDelay'].includes(key)) {
+                if (['start', 'count', 'chapter', 'maxConcurrent', 'maxChapters', 'retryAttempts', 'retryDelay'].includes(key)) {
                     options[key] = parseInt(value);
                 } else {
                     options[key] = value;
@@ -206,7 +199,7 @@ function parseArgs() {
 // 主函数
 async function main() {
     const { command, options } = parseArgs();
-    const crawler = new ColamangaCrawler();
+    const crawler = new ColamangaCrawler(options);
     
     switch (command) {
         case 'collect':

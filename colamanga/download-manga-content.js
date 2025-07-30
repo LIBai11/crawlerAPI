@@ -2,38 +2,7 @@ const { chromium } = require('playwright');
 const fs = require('fs-extra');
 const path = require('path');
 
-/**
- * 信号量类 - 用于控制并发数量
- */
-class Semaphore {
-    constructor(maxConcurrent) {
-        this.maxConcurrent = maxConcurrent;
-        this.currentCount = 0;
-        this.waitingQueue = [];
-    }
-
-    async acquire() {
-        return new Promise((resolve) => {
-            if (this.currentCount < this.maxConcurrent) {
-                this.currentCount++;
-                resolve(() => this.release());
-            } else {
-                this.waitingQueue.push(() => {
-                    this.currentCount++;
-                    resolve(() => this.release());
-                });
-            }
-        });
-    }
-
-    release() {
-        this.currentCount--;
-        if (this.waitingQueue.length > 0) {
-            const next = this.waitingQueue.shift();
-            next();
-        }
-    }
-}
+// 简化的并行控制，移除复杂的信号量实现
 
 class MangaContentDownloader {
     constructor(options = {}) {
@@ -41,26 +10,36 @@ class MangaContentDownloader {
         this.page = null; // 保留用于兼容性，但主要使用浏览器池
         this.outputDir = 'E:\\manga';
 
-        // 并行处理配置
+        // 简化的并行处理配置
         this.parallelConfig = {
-            enabled: false, // 默认启用并行处理
-            maxConcurrent: options.maxConcurrent || 1, // 默认最大并发数为3
-            chapterConcurrent: options.chapterConcurrent || 1, // 章节级别并发数
-            imageConcurrent: options.imageConcurrent || 5, // 图片下载并发数
+            enabled: options.parallel !== false, // 默认启用并行处理
+            maxConcurrent: options.maxConcurrent || 3, // 默认最大并发数为3
             retryAttempts: options.retryAttempts || 2, // 重试次数
             retryDelay: options.retryDelay || 1000 // 重试延迟(ms)
         };
 
-        // 浏览器池管理（每个元素都是独立的浏览器实例）
-        this.browserPool = [];
-        this.maxBrowsers = this.parallelConfig.enabled ? this.parallelConfig.maxConcurrent : 1; // 并行关闭时强制为1
+        // 所有浏览器实例管理（统一管理主浏览器和浏览器池）
+        this.allBrowsers = []; // 包含主浏览器在内的所有浏览器实例
+        this.browserPool = []; // 额外的浏览器池实例
+        // 需要创建的额外浏览器数量
+        this.maxBrowsers = this.parallelConfig.enabled && this.parallelConfig.maxConcurrent > 1 
+            ? this.parallelConfig.maxConcurrent - 1 
+            : 0;
 
-        console.log(`🔧 并行处理配置:`);
-        console.log(`   - 启用状态: ${this.parallelConfig.enabled ? '是' : '否'}`);
-        console.log(`   - 最大并发数: ${this.parallelConfig.maxConcurrent}`);
-        console.log(`   - 章节并发数: ${this.parallelConfig.chapterConcurrent}`);
-        console.log(`   - 图片并发数: ${this.parallelConfig.imageConcurrent}`);
-        console.log(`   - 浏览器实例数: ${this.maxBrowsers}`);
+        // 图片数据缓存
+        this.imageBlobs = new Map();
+        this.requests = new Map();
+        this.context = null;
+
+        // 统计信息
+        this.stats = {
+            totalMangasProcessed: 0,
+            totalChaptersDownloaded: 0,
+            totalImagesDownloaded: 0,
+            totalErrors: 0
+        };
+
+        this.initializeCache();
     }
 
     async init() {
@@ -119,20 +98,29 @@ class MangaContentDownloader {
         // 关闭AdBlock扩展自动打开的页面
         // await this.closeAdBlockPage();
 
-        // 只有在启用并行处理时才初始化浏览器池
-        if (this.parallelConfig.enabled) {
+        // 将主浏览器添加到管理列表
+        this.allBrowsers.push({
+            id: 'main',
+            context: this.context,
+            page: this.page,
+            busy: false,
+            lastUsed: Date.now()
+        });
+
+        // 初始化额外浏览器池（支持漫画间并行）
+        if (this.parallelConfig.enabled && this.maxBrowsers > 0) {
             await this.initializeBrowserPool();
-            console.log('✅ 主浏览器和浏览器池初始化完成');
+            console.log(`✅ 浏览器初始化完成 - 总共 ${this.allBrowsers.length} 个实例 (1个主浏览器 + ${this.browserPool.length}个池实例)`);
         } else {
-            console.log('✅ 主浏览器初始化完成（并行处理已关闭）');
+            console.log('✅ 主浏览器初始化完成（串行模式，1个实例）');
         }
     }
 
     /**
-     * 初始化浏览器池（创建多个独立浏览器实例）
+     * 初始化浏览器池（简化版本，支持漫画间并行）
      */
     async initializeBrowserPool() {
-        console.log(`🌐 初始化浏览器池，创建 ${this.maxBrowsers} 个独立浏览器实例...`);
+        console.log(`🌐 初始化浏览器池，创建 ${this.maxBrowsers} 个池实例 (总并发数: ${this.parallelConfig.maxConcurrent})...`);
         
         const extensionPath = 'C:\\Users\\likx\\Downloads\\AdBlock_v5.0.4';
         
@@ -144,20 +132,10 @@ class MangaContentDownloader {
                 const context = await chromium.launchPersistentContext('', {
                     headless: false,
                     channel: 'chrome',
-                    args: [
-                        // `--disable-extensions-except=${extensionPath}`,
-                        // `--load-extension=${extensionPath}`,
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage'
-                    ],
+                    args: [],
                     ignoreDefaultArgs: ['--disable-component-extensions-with-background-pages']
                 });
 
-                // 等待服务工作线程
-                const [sw] = context.serviceWorkers();
-                const serviceWorker = sw || await context.waitForEvent('serviceworker');
-                
                 // 创建主页面
                 const page = await context.newPage();
                 
@@ -169,24 +147,19 @@ class MangaContentDownloader {
                 await page.setDefaultTimeout(60000);
                 await page.setDefaultNavigationTimeout(60000);
                 
-                // 监听页面错误
-                page.on('pageerror', error => {
-                    console.log(`❌ 浏览器 ${i} 页面错误: ${error.message}`);
-                });
-                
                 // 设置 blob 图片捕获
-                await this.setupBlobCaptureForBrowser(page);
+                await this.setupBlobCaptureForPage(page);
                 
-                // 关闭AdBlock扩展自动打开的页面
-                // await this.closeAdBlockPageForBrowser(context);
-                
-                this.browserPool.push({
+                const browserInstance = {
                     id: i,
                     context: context,
                     page: page,
                     busy: false,
                     lastUsed: Date.now()
-                });
+                };
+
+                this.browserPool.push(browserInstance);
+                this.allBrowsers.push(browserInstance);
                 
                 console.log(`✅ 浏览器实例 ${i} 创建完成`);
             } catch (error) {
@@ -198,83 +171,67 @@ class MangaContentDownloader {
     }
 
     /**
-     * 获取空闲浏览器实例
+     * 获取空闲浏览器实例（统一管理所有浏览器）
      */
     async acquireBrowser(timeoutMs = 30000) {
-        // 如果并行处理关闭，直接返回主浏览器实例
-        if (!this.parallelConfig.enabled || this.browserPool.length === 0) {
-            console.log(`🔒 使用主浏览器实例（并行处理已关闭）`);
-            return {
-                id: 'main',
-                context: this.context,
-                page: this.page,
-                busy: false,
-                lastUsed: Date.now()
-            };
-        }
-        
         const startTime = Date.now();
         
         while (Date.now() - startTime < timeoutMs) {
-            // 查找空闲浏览器
-            const freeBrowser = this.browserPool.find(b => !b.busy);
+            // 从所有浏览器中查找空闲的
+            const freeBrowser = this.allBrowsers.find(b => !b.busy);
             
             if (freeBrowser) {
                 freeBrowser.busy = true;
                 freeBrowser.lastUsed = Date.now();
-                console.log(`🔒 浏览器实例 ${freeBrowser.id} 已分配`);
+                console.log(`🔒 获取浏览器实例 ${freeBrowser.id}`);
                 return freeBrowser;
             }
             
             // 等待一段时间后重试
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
         
-        throw new Error('获取浏览器实例超时：所有浏览器都在忙碌中');
+        throw new Error(`获取浏览器实例超时：所有 ${this.allBrowsers.length} 个浏览器都在忙碌中`);
     }
 
     /**
-     * 释放浏览器实例
+     * 释放浏览器实例（统一管理）
      */
     releaseBrowser(browserInstance) {
         if (browserInstance) {
-            // 如果是主浏览器实例，只记录日志
-            if (browserInstance.id === 'main') {
-                console.log(`🔓 主浏览器实例已释放`);
-                return;
-            }
-            
-            // 处理浏览器池实例
-            if (browserInstance.busy) {
-                browserInstance.busy = false;
-                browserInstance.lastUsed = Date.now();
-                console.log(`🔓 浏览器实例 ${browserInstance.id} 已释放`);
+            // 在所有浏览器列表中找到对应实例并释放
+            const browser = this.allBrowsers.find(b => b.id === browserInstance.id);
+            if (browser && browser.busy) {
+                browser.busy = false;
+                browser.lastUsed = Date.now();
+                console.log(`🔓 释放浏览器实例 ${browser.id}`);
             }
         }
     }
 
     /**
-     * 重置浏览器状态
+     * 为单个页面设置 blob 图片捕获
      */
-    async resetBrowser(browserInstance) {
-        try {
-            // 清除页面状态但不关闭浏览器
-            await browserInstance.page.evaluate(() => {
-                // 清除本地存储
-                localStorage.clear();
-                sessionStorage.clear();
-                
-                // 停止所有加载
-                window.stop();
-            });
-            
-            const instanceType = browserInstance.id === 'main' ? '主浏览器实例' : `浏览器实例 ${browserInstance.id}`;
-            console.log(`🔄 ${instanceType} 状态已重置`);
-        } catch (error) {
-            const instanceType = browserInstance.id === 'main' ? '主浏览器实例' : `浏览器实例 ${browserInstance.id}`;
-            console.log(`⚠️ 重置 ${instanceType} 失败: ${error.message}`);
-        }
+    async setupBlobCaptureForPage(page) {
+        await page.addInitScript(() => {
+            const originalCreateObjectURL = URL.createObjectURL;
+            URL.createObjectURL = function (object) {
+                const blobUrl = originalCreateObjectURL.call(this, object);
+                window.__blobUrls = window.__blobUrls || [];
+                window.__blobUrls.push({
+                    blobUrl: blobUrl,
+                    size: object.size,
+                    type: object.type,
+                    timestamp: Date.now()
+                });
+                return blobUrl;
+            };
+        });
     }
+
+
+
+
 
     async setupBlobCapture() {
         // 简化的blob URL监听，仅用于调试
@@ -772,56 +729,106 @@ class MangaContentDownloader {
     }
 
     /**
-     * 并行下载多个漫画
+     * 真正的并行下载多个漫画 - 每个漫画独立的浏览器实例同时执行
      */
     async downloadMangasInParallel(mangaList, options = {}) {
-        const {
-            startIndex = 0,
-            count = null,
-            maxChapters = null
-        } = options;
-
-        const targetList = mangaList.slice(startIndex, count ? startIndex + count : undefined);
-        console.log(`🚀 开始并行下载 ${targetList.length} 个漫画`);
+        const { maxChapters = null } = options;
+        
+        console.log(`🚀 开始并行下载 ${mangaList.length} 个漫画`);
         console.log(`📊 并发配置: 最大并发数 ${this.parallelConfig.maxConcurrent}`);
 
-        if (!this.parallelConfig.enabled) {
-            console.log(`⚠️ 并行处理已禁用，使用串行下载`);
-            return await this.downloadMangasSequentially(targetList, maxChapters);
-        }
+        // 限制并发数量，取较小值
+        const actualConcurrent = Math.min(this.parallelConfig.maxConcurrent, mangaList.length);
+        console.log(`🎯 实际并发数: ${actualConcurrent}`);
 
         const results = [];
-        const semaphore = new Semaphore(this.parallelConfig.maxConcurrent);
+        
+        // 将漫画分组，每组的大小等于并发数
+        const groups = [];
+        for (let i = 0; i < mangaList.length; i += actualConcurrent) {
+            groups.push(mangaList.slice(i, i + actualConcurrent));
+        }
 
-        // 创建下载任务
-        const downloadTasks = targetList.map((manga, index) => {
-            return async () => {
-                const release = await semaphore.acquire();
+        console.log(`📦 总共分为 ${groups.length} 组，每组最多 ${actualConcurrent} 个漫画并行处理`);
+
+        // 逐组处理
+        for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+            const group = groups[groupIndex];
+            console.log(`\n📦 开始处理第 ${groupIndex + 1}/${groups.length} 组 (${group.length} 个漫画):`);
+            
+            // 为当前组的每个漫画分配专用浏览器实例
+            const groupTasks = group.map(async (manga, index) => {
+                let browserInstance = null;
+                const mangaIndex = groupIndex * actualConcurrent + index + 1;
+                
                 try {
-                    console.log(`🎯 [${startIndex + index + 1}/${mangaList.length}] 开始下载: ${manga.name}`);
-                    const result = await this.downloadSingleMangaWithRetry(manga, maxChapters);
-                    results.push({ manga, result, index: startIndex + index });
-                    return result;
+                    console.log(`🔄 [${mangaIndex}] 正在为漫画 "${manga.name}" 分配浏览器实例...`);
+                    
+                    // 获取专用浏览器实例（如果是主浏览器池不够，会等待）
+                    browserInstance = await this.acquireBrowser();
+                    console.log(`✅ [${mangaIndex}] 漫画 "${manga.name}" 已分配到浏览器实例 ${browserInstance.id}`);
+                    
+                    // 开始下载
+                    console.log(`🎯 [${mangaIndex}] [浏览器 ${browserInstance.id}] 开始下载: ${manga.name}`);
+                    const result = await this.downloadSingleMangaWithBrowser(manga, maxChapters, browserInstance);
+                    
+                    console.log(`${result.success ? '✅' : '❌'} [${mangaIndex}] [浏览器 ${browserInstance.id}] 漫画 "${manga.name}" 下载${result.success ? '完成' : '失败'}`);
+                    return { manga, result, success: result.success, mangaIndex };
+                    
                 } catch (error) {
-                    console.error(`❌ 下载失败: ${manga.name} - ${error.message}`);
-                    results.push({ manga, result: { success: false, error: error.message }, index: startIndex + index });
-                    return { success: false, error: error.message };
+                    console.error(`❌ [${mangaIndex}] 漫画 "${manga.name}" 下载失败: ${error.message}`);
+                    return { 
+                        manga, 
+                        result: { success: false, error: error.message }, 
+                        success: false, 
+                        mangaIndex 
+                    };
                 } finally {
-                    release();
+                    // 确保释放浏览器实例
+                    if (browserInstance) {
+                        console.log(`🔓 [${mangaIndex}] 释放浏览器实例 ${browserInstance.id}`);
+                        this.releaseBrowser(browserInstance);
+                    }
                 }
-            };
-        });
+            });
 
-        // 执行并行下载
-        const downloadResults = await Promise.allSettled(downloadTasks.map(task => task()));
+            // 真正并行执行当前组的所有任务
+            console.log(`⚡ 同时启动 ${group.length} 个下载任务...`);
+            const groupResults = await Promise.allSettled(groupTasks);
+            
+            // 处理结果
+            groupResults.forEach((promiseResult, index) => {
+                if (promiseResult.status === 'fulfilled') {
+                    results.push(promiseResult.value);
+                } else {
+                    const manga = group[index];
+                    console.error(`❌ [${groupIndex * actualConcurrent + index + 1}] 任务执行失败: ${manga.name} - ${promiseResult.reason?.message}`);
+                    results.push({
+                        manga,
+                        result: { success: false, error: promiseResult.reason?.message || '任务执行失败' },
+                        success: false,
+                        mangaIndex: groupIndex * actualConcurrent + index + 1
+                    });
+                }
+            });
 
-        // 统计结果
-        const successful = results.filter(r => r.result.success).length;
-        const failed = results.filter(r => !r.result.success).length;
+            console.log(`📊 第 ${groupIndex + 1} 组处理完成`);
+            
+            // 组间稍作休息（除了最后一组）
+            if (groupIndex < groups.length - 1) {
+                console.log(`⏳ 组间休息 3 秒...`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        }
 
-        console.log(`\n📊 并行下载完成统计:`);
-        console.log(`   ✅ 成功: ${successful}`);
-        console.log(`   ❌ 失败: ${failed}`);
+        // 统计最终结果
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+
+        console.log(`\n🎉 并行下载全部完成！`);
+        console.log(`📊 总体统计:`);
+        console.log(`   ✅ 成功: ${successful}/${mangaList.length}`);
+        console.log(`   ❌ 失败: ${failed}/${mangaList.length}`);
         console.log(`   📁 输出目录: ${this.outputDir}`);
 
         return results;
@@ -851,52 +858,37 @@ class MangaContentDownloader {
     }
 
     /**
-     * 下载单个漫画（带重试机制，使用独立浏览器实例）
+     * 下载单个漫画（带重试机制，简化版本）
      */
     async downloadSingleMangaWithRetry(manga, maxChapters = null) {
         let lastError = null;
-        let browserInstance = null;
 
-        try {
-            // 获取独立浏览器实例
-            browserInstance = await this.acquireBrowser();
-            console.log(`🎯 [浏览器 ${browserInstance.id}] 开始下载漫画: ${manga.name}`);
-
-            for (let attempt = 1; attempt <= this.parallelConfig.retryAttempts + 1; attempt++) {
-                try {
-                    if (attempt > 1) {
-                        console.log(`🔄 [浏览器 ${browserInstance.id}] 第 ${attempt - 1} 次重试下载: ${manga.name}`);
-                        await new Promise(resolve => setTimeout(resolve, this.parallelConfig.retryDelay));
-                        
-                        // 重置浏览器状态
-                        await this.resetBrowser(browserInstance);
-                    }
-
-                    const result = await this.downloadSingleManga(manga, maxChapters, browserInstance);
-                    if (result.success) {
-                        return result;
-                    }
-
-                    lastError = new Error(result.error || '下载失败');
-                } catch (error) {
-                    lastError = error;
-                    console.error(`❌ [浏览器 ${browserInstance.id}] 下载尝试 ${attempt} 失败: ${manga.name} - ${error.message}`);
+        for (let attempt = 1; attempt <= this.parallelConfig.retryAttempts + 1; attempt++) {
+            try {
+                if (attempt > 1) {
+                    console.log(`🔄 第 ${attempt - 1} 次重试下载: ${manga.name}`);
+                    await new Promise(resolve => setTimeout(resolve, this.parallelConfig.retryDelay));
                 }
-            }
 
-            throw lastError || new Error('下载失败');
-        } finally {
-            // 确保释放浏览器实例
-            if (browserInstance) {
-                this.releaseBrowser(browserInstance);
+                const result = await this.downloadSingleManga(manga, maxChapters);
+                if (result.success) {
+                    return result;
+                }
+
+                lastError = new Error(result.error || '下载失败');
+            } catch (error) {
+                lastError = error;
+                console.error(`❌ 下载尝试 ${attempt} 失败: ${manga.name} - ${error.message}`);
             }
         }
+
+        throw lastError || new Error('下载失败');
     }
 
     /**
      * 下载单个漫画的所有章节（使用指定浏览器实例）
      */
-    async downloadSingleManga(manga, maxChapters = null, browserInstance = null) {
+    async downloadSingleMangaWithBrowser(manga, maxChapters = null, browserInstance = null) {
         console.log(`📖 [浏览器 ${browserInstance?.id || '主'}] 开始下载漫画: ${manga.name} (ID: ${manga.id})`);
 
         const startTime = Date.now();
@@ -906,6 +898,19 @@ class MangaContentDownloader {
         let failedChapters = 0;
 
         try {
+            // 检查是否已完成下载
+            if (await this.checkMangaCompletion(manga)) {
+                console.log(`✅ ${manga.name} 已完成下载，跳过`);
+                return {
+                    success: true,
+                    totalChapters: manga.maxChapter || 0,
+                    successfulChapters: manga.maxChapter || 0,
+                    skippedChapters: manga.maxChapter || 0,
+                    failedChapters: 0,
+                    duration: Date.now() - startTime
+                };
+            }
+
             // 获取漫画信息（仅第一次）
             const firstChapterResult = await this.downloadMangaContent(manga.id, manga.name, 1, false, browserInstance);
             if (firstChapterResult) {
@@ -915,8 +920,11 @@ class MangaContentDownloader {
             }
             totalChapters++;
 
+            // 确定下载的最大章节数
+            const maxChapterToDownload = maxChapters || manga.maxChapter || 999;
+
             // 如果只下载一章，直接返回
-            if (maxChapters === 1) {
+            if (maxChapterToDownload === 1) {
                 return {
                     success: firstChapterResult,
                     totalChapters,
@@ -927,60 +935,144 @@ class MangaContentDownloader {
                 };
             }
 
-            // 下载后续章节
-            const chapterTasks = [];
-            const maxChapterToDownload = maxChapters || 999; // 默认最大999章
-
-            // 创建章节下载任务
+            // 串行下载后续章节（在单个漫画内部串行）
+            console.log(`📚 [浏览器 ${browserInstance?.id || '主'}] 下载章节 2-${maxChapterToDownload}`);
+            let consecutiveFailures = 0;
+            
             for (let chapter = 2; chapter <= maxChapterToDownload; chapter++) {
-                chapterTasks.push({
-                    chapter,
-                    mangaId: manga.id,
-                    mangaName: manga.name
-                });
-            }
-
-            // 并行下载章节
-            if (this.parallelConfig.enabled && chapterTasks.length > 1) {
-                console.log(`🚀 并行下载章节 2-${Math.min(maxChapterToDownload, chapterTasks.length + 1)}`);
-                const chapterResults = await this.downloadChaptersInParallel(chapterTasks);
-
-                // 统计结果
-                chapterResults.forEach(result => {
+                try {
+                    const result = await this.downloadMangaContent(manga.id, manga.name, chapter, true, browserInstance);
                     totalChapters++;
-                    if (result.success) {
-                        if (result.skipped) {
-                            skippedChapters++;
-                        } else {
-                            successfulChapters++;
-                        }
+                    if (result) {
+                        successfulChapters++;
+                        consecutiveFailures = 0; // 重置连续失败计数
                     } else {
                         failedChapters++;
+                        consecutiveFailures++;
                     }
-                });
-            } else {
-                // 串行下载章节
-                console.log(`📚 串行下载章节 2-${Math.min(maxChapterToDownload, chapterTasks.length + 1)}`);
-                for (const task of chapterTasks) {
-                    try {
-                        const result = await this.downloadMangaContent(task.mangaId, task.mangaName, task.chapter, true);
-                        totalChapters++;
-                        if (result) {
-                            successfulChapters++;
-                        } else {
-                            failedChapters++;
-                        }
-                    } catch (error) {
-                        console.error(`❌ 章节 ${task.chapter} 下载失败: ${error.message}`);
-                        totalChapters++;
-                        failedChapters++;
+                } catch (error) {
+                    console.error(`❌ 章节 ${chapter} 下载失败: ${error.message}`);
+                    totalChapters++;
+                    failedChapters++;
+                    consecutiveFailures++;
+                }
 
-                        // 如果连续失败多章，可能是漫画结束了
-                        if (failedChapters >= 3) {
-                            console.log(`⚠️ 连续失败3章，可能已到漫画结尾，停止下载`);
-                            break;
-                        }
+                // 如果连续失败多章，可能是漫画结束了
+                if (consecutiveFailures >= 3) {
+                    console.log(`⚠️ 连续失败${consecutiveFailures}章，可能已到漫画结尾，停止下载`);
+                    break;
+                }
+            }
+
+            const duration = Date.now() - startTime;
+            const success = successfulChapters > 0;
+
+            console.log(`📊 [浏览器 ${browserInstance?.id || '主'}] 漫画 ${manga.name} 下载完成:`);
+            console.log(`   - 总章节: ${totalChapters}`);
+            console.log(`   - 成功: ${successfulChapters}`);
+            console.log(`   - 跳过: ${skippedChapters}`);
+            console.log(`   - 失败: ${failedChapters}`);
+            console.log(`   - 耗时: ${(duration / 1000).toFixed(1)}秒`);
+
+            return {
+                success,
+                totalChapters,
+                successfulChapters,
+                skippedChapters,
+                failedChapters,
+                duration
+            };
+
+        } catch (error) {
+            console.error(`❌ [浏览器 ${browserInstance?.id || '主'}] 下载漫画失败: ${manga.name} - ${error.message}`);
+            return {
+                success: false,
+                error: error.message,
+                totalChapters,
+                successfulChapters,
+                skippedChapters,
+                failedChapters,
+                duration: Date.now() - startTime
+            };
+        }
+    }
+
+    /**
+     * 下载单个漫画的所有章节（简化版本，向后兼容）
+     */
+    async downloadSingleManga(manga, maxChapters = null) {
+        console.log(`📖 开始下载漫画: ${manga.name} (ID: ${manga.id})`);
+
+        const startTime = Date.now();
+        let totalChapters = 0;
+        let successfulChapters = 0;
+        let skippedChapters = 0;
+        let failedChapters = 0;
+
+        try {
+            // 检查是否已完成下载
+            if (await this.checkMangaCompletion(manga)) {
+                console.log(`✅ ${manga.name} 已完成下载，跳过`);
+                return {
+                    success: true,
+                    totalChapters: manga.maxChapter || 0,
+                    successfulChapters: manga.maxChapter || 0,
+                    skippedChapters: manga.maxChapter || 0,
+                    failedChapters: 0,
+                    duration: Date.now() - startTime
+                };
+            }
+
+            // 获取漫画信息（仅第一次）
+            const firstChapterResult = await this.downloadMangaContent(manga.id, manga.name, 1, false);
+            if (firstChapterResult) {
+                successfulChapters++;
+            } else {
+                failedChapters++;
+            }
+            totalChapters++;
+
+            // 确定下载的最大章节数
+            const maxChapterToDownload = maxChapters || manga.maxChapter || 999;
+
+            // 如果只下载一章，直接返回
+            if (maxChapterToDownload === 1) {
+                return {
+                    success: firstChapterResult,
+                    totalChapters,
+                    successfulChapters,
+                    skippedChapters,
+                    failedChapters,
+                    duration: Date.now() - startTime
+                };
+            }
+
+            // 串行下载后续章节
+            console.log(`📚 下载章节 2-${maxChapterToDownload}`);
+            let consecutiveFailures = 0;
+            
+            for (let chapter = 2; chapter <= maxChapterToDownload; chapter++) {
+                try {
+                    const result = await this.downloadMangaContent(manga.id, manga.name, chapter, true);
+                    totalChapters++;
+                    if (result) {
+                        successfulChapters++;
+                        consecutiveFailures = 0; // 重置连续失败计数
+                    } else {
+                        failedChapters++;
+                        consecutiveFailures++;
                     }
+                } catch (error) {
+                    console.error(`❌ 章节 ${chapter} 下载失败: ${error.message}`);
+                    totalChapters++;
+                    failedChapters++;
+                    consecutiveFailures++;
+                }
+
+                // 如果连续失败多章，可能是漫画结束了
+                if (consecutiveFailures >= 3) {
+                    console.log(`⚠️ 连续失败${consecutiveFailures}章，可能已到漫画结尾，停止下载`);
+                    break;
                 }
             }
 
@@ -1017,54 +1109,7 @@ class MangaContentDownloader {
         }
     }
 
-    /**
-     * 并行下载多个章节
-     */
-    async downloadChaptersInParallel(chapterTasks) {
-        const semaphore = new Semaphore(this.parallelConfig.chapterConcurrent);
-        const results = [];
 
-        const downloadTasks = chapterTasks.map(task => {
-            return async () => {
-                const release = await semaphore.acquire();
-                try {
-                    console.log(`📄 开始下载章节 ${task.chapter}`);
-                    const result = await this.downloadMangaContent(task.mangaId, task.mangaName, task.chapter, true);
-                    return {
-                        chapter: task.chapter,
-                        success: result,
-                        skipped: false // 这里可以根据实际情况判断是否跳过
-                    };
-                } catch (error) {
-                    console.error(`❌ 章节 ${task.chapter} 下载失败: ${error.message}`);
-                    return {
-                        chapter: task.chapter,
-                        success: false,
-                        error: error.message
-                    };
-                } finally {
-                    release();
-                }
-            };
-        });
-
-        // 执行并行下载
-        const downloadResults = await Promise.allSettled(downloadTasks.map(task => task()));
-
-        downloadResults.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-                results.push(result.value);
-            } else {
-                results.push({
-                    chapter: chapterTasks[index].chapter,
-                    success: false,
-                    error: result.reason?.message || '未知错误'
-                });
-            }
-        });
-
-        return results;
-    }
 
     /**
      * 重构的章节导航逻辑
@@ -2911,22 +2956,107 @@ class MangaContentDownloader {
         console.log(`📚 加载漫画列表，共 ${mangaList.length} 个漫画`);
         console.log(`🔧 并行处理配置: ${this.parallelConfig.enabled ? '启用' : '禁用'} (最大并发: ${this.parallelConfig.maxConcurrent})`);
 
-        const options = { startIndex, count, maxChapters };
+        // 过滤掉已完成的漫画
+        const targetList = mangaList.slice(startIndex, count ? startIndex + count : undefined);
+        const incompleteList = [];
+        
+        console.log(`🔍 检查漫画下载完成状态...`);
+        for (const manga of targetList) {
+            if (await this.checkMangaCompletion(manga)) {
+                console.log(`✅ ${manga.name} 已完成下载，跳过`);
+            } else {
+                incompleteList.push(manga);
+            }
+        }
+        
+        console.log(`📊 需要下载: ${incompleteList.length}/${targetList.length} 个漫画`);
+        
+        if (incompleteList.length === 0) {
+            console.log(`🎉 所有漫画都已完成下载！`);
+            return [];
+        }
 
-        if (this.parallelConfig.enabled) {
+        const options = { startIndex: 0, count: null, maxChapters };
+
+        if (this.parallelConfig.enabled && incompleteList.length > 1) {
             console.log(`🚀 使用并行模式下载漫画`);
-            return await this.downloadMangasInParallel(mangaList, options);
+            return await this.downloadMangasInParallel(incompleteList, options);
         } else {
             console.log(`📚 使用串行模式下载漫画`);
-            return await this.downloadMangasSequentially(mangaList.slice(startIndex, count ? startIndex + count : undefined), maxChapters);
+            return await this.downloadMangasSequentially(incompleteList, maxChapters);
+        }
+    }
+
+    /**
+     * 检查漫画是否已完成下载
+     * 通过比较已下载的章节文件夹数量和漫画的最大章节数
+     */
+    async checkMangaCompletion(manga) {
+        try {
+            // 检查漫画是否有最大章节数信息
+            if (!manga.maxChapter || manga.maxChapter <= 0) {
+                return false; // 没有最大章节信息，认为未完成
+            }
+
+            const mangaDir = path.join(this.outputDir, this.sanitizeFileName(manga.name));
+            if (!await fs.pathExists(mangaDir)) {
+                return false; // 文件夹不存在，肯定未完成
+            }
+
+            // 获取所有章节文件夹
+            const files = await fs.readdir(mangaDir);
+            const chapterDirs = files.filter(file => {
+                const chapterPath = path.join(mangaDir, file);
+                return fs.statSync(chapterPath).isDirectory() && /^第\d+章/.test(file);
+            });
+
+            // 提取章节号并排序
+            const chapterNumbers = chapterDirs.map(dir => {
+                const match = dir.match(/^第(\d+)章/);
+                return match ? parseInt(match[1]) : 0;
+            }).filter(num => num > 0).sort((a, b) => a - b);
+
+            // 检查是否有连续的章节从1到maxChapter
+            if (chapterNumbers.length < manga.maxChapter) {
+                return false;
+            }
+
+            // 检查是否有最大章节
+            const maxDownloadedChapter = Math.max(...chapterNumbers);
+            if (maxDownloadedChapter < manga.maxChapter) {
+                return false;
+            }
+
+            // 额外检查：确保每个章节文件夹都有图片文件
+            for (let i = 1; i <= manga.maxChapter; i++) {
+                const chapterDir = path.join(mangaDir, `第${i}章`);
+                if (!await fs.pathExists(chapterDir)) {
+                    return false;
+                }
+                
+                const chapterFiles = await fs.readdir(chapterDir);
+                const imageFiles = chapterFiles.filter(f => 
+                    f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')
+                );
+                
+                if (imageFiles.length === 0) {
+                    return false; // 章节文件夹存在但没有图片
+                }
+            }
+
+            return true; // 所有检查通过，认为已完成
+            
+        } catch (error) {
+            console.log(`⚠️ 检查漫画 ${manga.name} 完成状态时出错: ${error.message}`);
+            return false; // 出错时保守处理，认为未完成
         }
     }
 
     async close() {
-        console.log('🔄 开始关闭主浏览器和浏览器池...');
+        console.log('🔄 开始关闭浏览器...');
         
-        // 关闭浏览器池中的所有浏览器实例
-        for (const browserInstance of this.browserPool) {
+        // 关闭所有浏览器实例
+        for (const browserInstance of this.allBrowsers) {
             try {
                 if (browserInstance.context) {
                     await browserInstance.context.close();
@@ -2937,58 +3067,10 @@ class MangaContentDownloader {
             }
         }
         
-        // 关闭主浏览器上下文
-        if (this.context) {
-            await this.context.close();
-            console.log('🔒 主浏览器上下文已关闭');
-        }
-        
-        console.log('✅ 所有浏览器实例已完全关闭');
+        console.log('✅ 所有浏览器实例关闭完成');
     }
 
-    /**
-     * 为单个浏览器设置 blob 图片捕获
-     */
-    async setupBlobCaptureForBrowser(page) {
-        try {
-            await page.route('**/*', async (route) => {
-                const response = await route.fetch();
-                const contentType = response.headers()['content-type'] || '';
-                
-                if (contentType.includes('image/')) {
-                    const buffer = await response.body();
-                    const url = route.request().url();
-                    
-                    if (url.startsWith('blob:')) {
-                        // 处理 blob URL 图片
-                        console.log(`🔍 捕获到 blob 图片: ${url}`);
-                    }
-                }
-                
-                await route.continue();
-            });
-        } catch (error) {
-            console.log(`⚠️ 设置 blob 捕获失败: ${error.message}`);
-        }
-    }
 
-    /**
-     * 为单个浏览器关闭 AdBlock 扩展自动打开的页面
-     */
-    async closeAdBlockPageForBrowser(context) {
-        try {
-            const pages = context.pages();
-            for (const page of pages) {
-                const url = page.url();
-                if (url.includes('adblock')) {
-                    await page.close();
-                    console.log(`🗑️ 已关闭扩展页面: ${url}`);
-                }
-            }
-        } catch (error) {
-            console.log(`⚠️ 关闭扩展页面失败: ${error.message}`);
-        }
-    }
 }
 
 /**
