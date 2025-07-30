@@ -9,10 +9,19 @@ async function main() {
     console.log('   - 更新 manga-ids.json 文件添加 maxChapter 字段');
     console.log('');
     console.log('🔧 使用方法:');
-    console.log('   - node run-max-chapters.js         处理前10个漫画（默认）');
-    console.log('   - node run-max-chapters.js 0       处理所有漫画');
-    console.log('   - node run-max-chapters.js 50      处理前50个漫画');
-    console.log('   - node run-max-chapters.js 100     处理前100个漫画');
+    console.log('   语法: node run-max-chapters.js [数量] [并发数]');
+    console.log('');
+    console.log('   📊 数量参数:');
+    console.log('   - node run-max-chapters.js             处理前10个漫画（默认）');
+    console.log('   - node run-max-chapters.js 0           处理所有漫画');
+    console.log('   - node run-max-chapters.js 50          处理前50个漫画');
+    console.log('');
+    console.log('   ⚡ 并发参数:');
+    console.log('   - node run-max-chapters.js 50 3        处理前50个，并发数3（默认）');
+    console.log('   - node run-max-chapters.js 0 5         处理所有，并发数5');
+    console.log('   - node run-max-chapters.js 100 2       处理前100个，并发数2');
+    console.log('');
+    console.log('   💡 建议: 并发数2-5比较合适，避免被网站限制');
     console.log('=' .repeat(60));
     
     const collector = new MaxChapterCollector();
