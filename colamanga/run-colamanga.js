@@ -6,9 +6,10 @@ const path = require('path');
 class ColamangaCrawler {
     constructor(options = {}) {
         this.outputDir = '/Users/likaixuan/Documents/manga';
+        // 注意：新版本已移除并发功能，这些选项仅为兼容性保留
         this.parallelOptions = {
-            parallel: options.parallel !== false, // 默认启用并行
-            maxConcurrent: options.maxConcurrent || 2, // 降低为2个并发以节省内存
+            parallel: false, // 新版本不支持并发
+            maxConcurrent: 1, // 固定为1
             retryAttempts: options.retryAttempts || 2,
             retryDelay: options.retryDelay || 1000
         };
@@ -43,8 +44,8 @@ class ColamangaCrawler {
 
         console.log('📥 开始下载漫画内容...\n');
         console.log('🔧 下载配置:');
-        console.log(`   - 并行模式: ${this.parallelOptions.parallel ? '启用' : '禁用'}`);
-        console.log(`   - 最大并发数: ${this.parallelOptions.maxConcurrent}`);
+        console.log(`   - 运行模式: 串行模式 (简化版)`);
+        console.log(`   - 重试次数: ${this.parallelOptions.retryAttempts}`);
         console.log('');
 
         const downloader = new MangaContentDownloader(this.parallelOptions);
@@ -130,26 +131,21 @@ class ColamangaCrawler {
 单个漫画下载:
   node run-colamanga.js download --id ap101511 --name "漫画名称" --chapter 1
 
-简化的配置选项:
-  --maxConcurrent 3              # 同时处理的漫画数量（默认: 3）
-  --no-parallel                  # 禁用并行处理，使用串行模式
+配置选项:
   --maxChapters 50               # 限制最大下载章节数
 
 示例:
   # 收集所有漫画ID
   node run-colamanga.js collect
-  
+
   # 下载前3个漫画
   node run-colamanga.js download --start 0 --count 3
-  
+
   # 执行完整流程并只下载前5个漫画
   node run-colamanga.js full --count 5
-  
-  # 使用5个并发下载
-  node run-colamanga.js download --maxConcurrent 5
-  
-  # 禁用并行处理（串行模式）
-  node run-colamanga.js download --no-parallel
+
+  # 限制下载章节数
+  node run-colamanga.js download --maxChapters 10
         `);
     }
 }
@@ -163,24 +159,13 @@ function parseArgs() {
     for (let i = 1; i < args.length; i++) {
         const arg = args[i];
 
-        // 处理布尔标志参数
-        if (arg === '--no-parallel') {
-            options.parallel = false;
-            continue;
-        }
-
-        if (arg === '--parallel') {
-            options.parallel = true;
-            continue;
-        }
-
         // 处理键值对参数
         if (arg.startsWith('--')) {
             const key = arg.replace('--', '');
             const value = args[i + 1];
 
             if (value !== undefined && !value.startsWith('--')) {
-                if (['start', 'count', 'chapter', 'maxConcurrent', 'maxChapters', 'retryAttempts', 'retryDelay'].includes(key)) {
+                if (['start', 'count', 'chapter', 'maxChapters', 'retryAttempts', 'retryDelay'].includes(key)) {
                     options[key] = parseInt(value);
                 } else {
                     options[key] = value;
