@@ -1,0 +1,23 @@
+{
+  "paths": {
+    "mangaIdsFile": "/Users/likaixuan/Documents/manga/manga-ids.json",
+    "outputFile": "/Users/likaixuan/Documents/manga/manga-chapter-total-pages.json"
+  },
+  "keys": {
+    "cdataKey": "w57pVEV5N9vENbQ2",
+    "encryptionKeys": [
+      "aGzU9QOeLVaK3rnL",
+      "TJloldeXW7EJOfrd",
+      "ijABEbPmMwut0nmD",
+      "ZsfOA40m7kWjodMH",
+      "gym9zc8DLpZYvPQT",
+      "VvQpoFwZC1UnfO0B",
+      "8enRS43hvFwocD7T"
+    ]
+  },
+  "settings": {
+    "concurrency": 15,
+    "saveInterval": 100,
+    "timeout": 30000
+  }
+}

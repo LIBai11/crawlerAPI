@@ -1,14 +1,25 @@
 const axios = require('axios');
 const fs = require('fs-extra');
-const path = require('path');
 const { parseFullMangaData, getTotalPage } = require('./analysis/decryptCDATA.js');
+const KeyManager = require('./config/keyManager.js');
 
 class ChapterTotalPageCollector {
-    constructor() {
-        this.mangaIdsFile = '/Users/likaixuan/Documents/manga/manga-ids.json';
-        this.outputFile = '/Users/likaixuan/Documents/manga/manga-chapter-total-pages.json';
+    constructor(configPath = null) {
+        // 初始化密钥管理器
+        this.keyManager = new KeyManager(configPath);
+
+        // 从配置中获取路径
+        const paths = this.keyManager.getPaths();
+        this.mangaIdsFile = paths.mangaIdsFile;
+        this.outputFile = paths.outputFile;
+
+        // 从配置中获取设置
+        const settings = this.keyManager.getSettings();
+        this.concurrency = settings.concurrency;
+        this.saveInterval = settings.saveInterval;
+        this.timeout = settings.timeout;
+
         this.results = [];
-        this.concurrency = 15; // 并发数量
         this.limit = null; // 将在 init 中初始化
 
         // 进度跟踪
@@ -16,11 +27,14 @@ class ChapterTotalPageCollector {
         this.successCount = 0;
         this.failCount = 0;
         this.startTime = null;
-        this.saveInterval = 100; // 每处理100个任务保存一次
         this.completedTasks = new Map(); // 存储已完成的任务结果
-        this.CDATAKEY = 'w57pVEV5N9vENbQ2'; // 用于解密C_DATA的密钥
-        this.encodeKey1 = 'aGzU9QOeLVaK3rnL'; // 用于加密的密钥1
-        this.encodeKey2 = 'TJloldeXW7EJOfrd'; // 用于加密的密钥2
+
+        // 显示密钥管理器信息
+        const keyStats = this.keyManager.getKeyStats();
+        console.log('🔑 密钥管理器初始化完成:');
+        console.log(`   CDATA密钥: ${keyStats.cdataKey}`);
+        console.log(`   加密密钥数量: ${keyStats.encryptionKeysCount}`);
+        console.log(`   配置文件: ${keyStats.configPath}`);
     }
 
     async init() {
@@ -134,7 +148,7 @@ class ChapterTotalPageCollector {
         return tasks;
     }
 
-    async processTaskWithProgress(task, index) {
+    async processTaskWithProgress(task) {
         try {
             const totalPage = await this.getChapterTotalPage(task.mangaId, task.chapter);
             const result = {
@@ -313,7 +327,7 @@ class ChapterTotalPageCollector {
     async getChapterTotalPage(mangaId, chapter) {
         // 构造章节URL
         const chapterUrl = `https://www.colamanga.com/manga-${mangaId}/1/${chapter}.html`;
-        
+
         try {
             // 发送GET请求获取页面内容
             const response = await axios.get(chapterUrl, {
@@ -325,47 +339,43 @@ class ChapterTotalPageCollector {
                     'Connection': 'keep-alive',
                     'Upgrade-Insecure-Requests': '1'
                 },
-                timeout: 30000
+                timeout: this.timeout
             });
 
             // 从响应中提取C_DATA
             const htmlContent = response.data;
             const cdataMatch = htmlContent.match(/C_DATA\s*=\s*['"]([^'"]+)['"]/);
-            
+
             if (!cdataMatch) {
                 throw new Error('未找到C_DATA');
             }
 
             const cdata = cdataMatch[1];
-            
-            // 使用解密函数解析数据
-            const mangaData = parseFullMangaData(cdata, this.CDATAKEY);
 
-            // 使用 getTotalPage 函数解密 enc_code1 获取总页数
-            try {
-                // 尝试不同的密钥
-                const keys = ['aGzU9QOeLVaK3rnL', 'TJloldeXW7EJOfrd'];
+            // 使用密钥管理器的CDATA密钥解析数据
+            const mangaData = parseFullMangaData(cdata, this.keyManager.getCdataKey());
 
-                for (const key of keys) {
-                    try {
-                        const totalPageStr = getTotalPage(mangaData.mh_info, key);
-                        if (totalPageStr && totalPageStr.trim()) {
-                            const totalPage = parseInt(totalPageStr.trim());
-                            if (!isNaN(totalPage) && totalPage > 0) {
-                                return totalPage;
-                            }
-                        }
-                    } catch (keyError) {
-                        // 继续尝试下一个密钥
-                        continue;
+            // 使用密钥管理器尝试解密总页数
+            const context = {
+                mangaId: mangaId,
+                chapter: chapter,
+                type: 'totalPage',
+                description: `漫画${mangaId}-章节${chapter}的总页数`
+            };
+
+            const decryptFunction = (key) => {
+                const totalPageStr = getTotalPage(mangaData.mh_info, key);
+                if (totalPageStr && totalPageStr.trim()) {
+                    const totalPage = parseInt(totalPageStr.trim());
+                    if (!isNaN(totalPage) && totalPage > 0) {
+                        return totalPage;
                     }
                 }
+                throw new Error('解密结果无效或为空');
+            };
 
-                throw new Error('所有密钥都无法解密总页数');
-            } catch (error) {
-                throw new Error(`解密总页数失败: ${error.message}`);
-            }
-            
+            return await this.keyManager.tryDecryptWithKeys(decryptFunction, null, context);
+
         } catch (error) {
             if (error.response && error.response.status === 404) {
                 throw new Error('章节不存在(404)');
@@ -393,7 +403,8 @@ class ChapterTotalPageCollector {
                     successfulChapters: successfulChapters,
                     failedChapters: failedChapters,
                     successRate: totalChapters > 0 ? ((successfulChapters / totalChapters) * 100).toFixed(2) + '%' : '0%',
-                    concurrency: this.concurrency
+                    concurrency: this.concurrency,
+                    keyManagerStats: this.keyManager.getKeyStats()
                 },
                 results: this.results
             }, { spaces: 2 });
@@ -425,9 +436,9 @@ class ChapterTotalPageCollector {
 }
 
 // 主函数
-async function main() {
-    const collector = new ChapterTotalPageCollector();
-    
+async function main(configPath = null) {
+    const collector = new ChapterTotalPageCollector(configPath);
+
     try {
         await collector.init();
         await collector.collectAllChapterPages();
@@ -441,4 +452,7 @@ if (require.main === module) {
     main().catch(console.error);
 }
 
-module.exports = ChapterTotalPageCollector;
+module.exports = {
+    ChapterTotalPageCollector,
+    main
+};

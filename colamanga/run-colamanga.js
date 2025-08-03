@@ -56,7 +56,7 @@ class ColamangaCrawler {
             if (mangaId && mangaName) {
                 await downloader.downloadMangaContent(mangaId, mangaName, chapter);
             } else {
-                const mangaListFile = path.join('/Users/likaixuan/Documents/manga/manga-ids.json');
+                const mangaListFile = path.join('/Users/likaixuan/Documents/manga/manga-chapter-total-pages.json');
                 if (await fs.pathExists(mangaListFile)) {
                     await downloader.downloadFromMangaList(mangaListFile, startIndex, count, maxChapters);
                 } else {
@@ -96,21 +96,57 @@ class ColamangaCrawler {
     }
 
     async showMangaList() {
-        const mangaListFile = path.join('./manga-ids.json');
-        console.log(mangaListFile)
-        
-        if (!(await fs.pathExists(mangaListFile))) {
-            console.log('❌ 未找到漫画列表文件，请先运行收集ID功能');
+        // 优先查找 manga-chapter-total-pages.json，然后是 manga-ids.json
+        const possibleFiles = [
+            path.join('/Users/likaixuan/Documents/manga/manga-chapter-total-pages.json'),
+            path.join('./manga-ids.json')
+        ];
+
+        let mangaListFile = null;
+        for (const file of possibleFiles) {
+            if (await fs.pathExists(file)) {
+                mangaListFile = file;
+                break;
+            }
+        }
+
+        if (!mangaListFile) {
+            console.log('❌ 未找到漫画列表文件，请先运行收集ID功能或章节页数收集功能');
             return;
         }
-        
-        const mangaList = await fs.readJson(mangaListFile);
+
+        console.log(`📁 使用漫画列表文件: ${mangaListFile}`);
+
+        const mangaListData = await fs.readJson(mangaListFile);
+
+        // 处理不同的数据结构
+        let mangaList;
+        if (Array.isArray(mangaListData)) {
+            // 如果是直接的数组格式（如 manga-ids.json）
+            mangaList = mangaListData;
+        } else if (mangaListData.results && Array.isArray(mangaListData.results)) {
+            // 如果是包含 results 字段的对象格式（如 manga-chapter-total-pages.json）
+            mangaList = mangaListData.results;
+        } else {
+            console.log('❌ 不支持的漫画列表文件格式');
+            return;
+        }
+
         console.log(`📚 漫画列表 (共 ${mangaList.length} 个):\n`);
-        
+
         mangaList.forEach((manga, index) => {
-            console.log(`${index + 1}. ${manga.name} (ID: ${manga.id})`);
+            let info = `${index + 1}. ${manga.name} (ID: ${manga.id})`;
+
+            // 如果有章节信息，显示章节数量
+            if (manga.chapters && Array.isArray(manga.chapters)) {
+                const totalChapters = manga.chapters.length;
+                const successfulChapters = manga.chapters.filter(ch => ch.totalPage && ch.totalPage !== 'fail').length;
+                info += ` - 章节: ${successfulChapters}/${totalChapters}`;
+            }
+
+            console.log(info);
         });
-        
+
         console.log('');
     }
 

@@ -13,6 +13,10 @@ class MangaContentDownloader {
     constructor(options = {}) {
         this.outputDir = '/Users/likaixuan/Documents/manga';
 
+        // 章节总页数数据文件路径
+        this.chapterTotalPagesFile = options.chapterTotalPagesFile || '/Users/likaixuan/Documents/manga/manga-chapter-total-pages.json';
+        this.chapterTotalPagesData = null; // 将在init中加载
+
         // 并行配置
         this.parallelConfig = {
             enabled: true, // 默认启用并行，除非明确设置为false
@@ -31,10 +35,55 @@ class MangaContentDownloader {
             totalMangasProcessed: 0,
             totalChaptersDownloaded: 0,
             totalImagesDownloaded: 0,
-            totalErrors: 0
+            totalErrors: 0,
+            skippedChapters: 0 // 新增：跳过的章节数
         };
 
         console.log(`🔧 漫画下载器初始化完成 - 并行模式: ${this.parallelConfig.enabled ? '启用' : '禁用'}, 最大并发: ${this.parallelConfig.maxConcurrent}`);
+    }
+
+    /**
+     * 加载章节总页数数据
+     */
+    async loadChapterTotalPagesData() {
+        try {
+            if (await fs.pathExists(this.chapterTotalPagesFile)) {
+                console.log(`📊 加载章节总页数数据: ${this.chapterTotalPagesFile}`);
+                const data = await fs.readJson(this.chapterTotalPagesFile);
+                this.chapterTotalPagesData = data.results || [];
+                console.log(`✅ 已加载 ${this.chapterTotalPagesData.length} 个漫画的章节页数数据`);
+            } else {
+                console.log(`⚠️ 章节总页数数据文件不存在: ${this.chapterTotalPagesFile}`);
+                console.log(`💡 提示: 可以先运行 get-chapter-total-pages.js 来生成此文件`);
+                this.chapterTotalPagesData = [];
+            }
+        } catch (error) {
+            console.error(`❌ 加载章节总页数数据失败: ${error.message}`);
+            this.chapterTotalPagesData = [];
+        }
+    }
+
+    /**
+     * 获取指定漫画章节的总页数
+     */
+    getChapterTotalPages(mangaId, chapter) {
+        if (!this.chapterTotalPagesData || this.chapterTotalPagesData.length === 0) {
+            return null;
+        }
+
+        // 查找对应的漫画数据
+        const mangaData = this.chapterTotalPagesData.find(manga => manga.id === mangaId);
+        if (!mangaData || !mangaData.chapters) {
+            return null;
+        }
+
+        // 查找对应的章节数据
+        const chapterData = mangaData.chapters.find(ch => ch.chapter === chapter);
+        if (!chapterData || chapterData.totalPage === 'fail' || chapterData.totalPage === null) {
+            return null;
+        }
+
+        return parseInt(chapterData.totalPage);
     }
 
     /**
@@ -45,6 +94,9 @@ class MangaContentDownloader {
 
         // 确保输出目录存在
         await fs.ensureDir(this.outputDir);
+
+        // 加载章节总页数数据
+        await this.loadChapterTotalPagesData();
 
         if (this.parallelConfig.enabled) {
             // 并行模式：创建多个浏览器实例
@@ -270,9 +322,22 @@ class MangaContentDownloader {
      */
     async downloadFromMangaList(mangaListFile, startIndex = 0, count = null, maxChapters = null) {
         console.log(`📚 开始从漫画列表下载: ${mangaListFile}`);
-        
+
         // 读取漫画列表
-        const mangaList = await fs.readJson(mangaListFile);
+        const mangaListData = await fs.readJson(mangaListFile);
+
+        // 处理不同的数据结构
+        let mangaList;
+        if (Array.isArray(mangaListData)) {
+            // 如果是直接的数组格式（如 manga-ids.json）
+            mangaList = mangaListData;
+        } else if (mangaListData.results && Array.isArray(mangaListData.results)) {
+            // 如果是包含 results 字段的对象格式（如 manga-chapter-total-pages.json）
+            mangaList = mangaListData.results;
+        } else {
+            throw new Error('不支持的漫画列表文件格式，期望数组或包含 results 字段的对象');
+        }
+
         console.log(`📖 漫画列表包含 ${mangaList.length} 个漫画`);
         
         // 应用范围限制
@@ -426,6 +491,7 @@ class MangaContentDownloader {
         console.log(`📊 总体统计:`);
         console.log(`   ✅ 成功: ${successful}/${mangaList.length}`);
         console.log(`   ❌ 失败: ${failed}/${mangaList.length}`);
+        console.log(`   ⏭️ 跳过章节: ${this.stats.skippedChapters} (已完整)`);
         console.log(`   ⏱️ 累计耗时: ${(totalDuration / 1000).toFixed(1)}秒`);
         console.log(`   ⚡ 平均每个漫画: ${(totalDuration / mangaList.length / 1000).toFixed(1)}秒`);
         console.log(`   📁 输出目录: ${this.outputDir}`);
@@ -534,6 +600,7 @@ class MangaContentDownloader {
             console.log(`   - 总章节: ${totalChapters}`);
             console.log(`   - 成功: ${successfulChapters}`);
             console.log(`   - 失败: ${failedChapters}`);
+            console.log(`   - 跳过: ${this.stats.skippedChapters} (已完整)`);
             console.log(`   - 耗时: ${(duration / 1000).toFixed(1)}秒`);
 
             return {
@@ -609,11 +676,17 @@ class MangaContentDownloader {
 
             console.log(`📁 [浏览器 ${currentBrowser.id}] 章节目录: ${chapterDirName}`);
 
-            // 检查章节是否已完成
-            if (await this.isChapterComplete(chapterDir)) {
+            // 检查章节是否已完成 - 传入漫画ID和章节号进行精确检查
+            if (await this.isChapterComplete(chapterDir, mangaId, chapter)) {
                 console.log(`✅ [浏览器 ${currentBrowser.id}] 章节已完整下载，跳过重复下载`);
+                this.stats.skippedChapters++; // 统计跳过的章节数
                 return true;
             }
+
+            // 在重新下载前，先清理不合格的图片和标准化文件名
+            console.log(`🧹 [浏览器 ${currentBrowser.id}] 清理章节目录...`);
+            await this.cleanupSmallImages(chapterDir, 5);
+            await this.normalizeImageFileNames(chapterDir);
 
             // 核心下载流程：滚动页面 -> 等待图片加载 -> 下载图片
             console.log(`🆕 [浏览器 ${currentBrowser.id}] 开始下载章节`);
@@ -755,23 +828,68 @@ class MangaContentDownloader {
     }
 
     /**
-     * 检查章节是否已完成下载
+     * 检查章节是否已完成下载 - 优化版本，支持基于总页数的精确检查
      */
-    async isChapterComplete(chapterDir) {
+    async isChapterComplete(chapterDir, mangaId = null, chapter = null) {
         try {
             // 检查目录是否存在
             if (!(await fs.pathExists(chapterDir))) {
                 return false;
             }
 
-            // 检查是否有图片文件
+            // 检查是否有图片文件，并过滤掉小于5KB的图片
             const files = await fs.readdir(chapterDir);
             const imageFiles = files.filter(file =>
                 /\.(png|jpg|jpeg|webp)$/i.test(file)
             );
 
-            // 如果有10张以上图片，认为章节基本完成
-            return imageFiles.length >= 10;
+            // 统计有效图片数量（大于等于5KB）
+            let validImageCount = 0;
+            let smallImageCount = 0;
+
+            for (const file of imageFiles) {
+                const filePath = path.join(chapterDir, file);
+                if (await this.isImageSizeValid(filePath, 5)) {
+                    validImageCount++;
+                } else {
+                    smallImageCount++;
+                }
+            }
+
+            const actualImageCount = validImageCount;
+
+            if (smallImageCount > 0) {
+                console.log(`📊 图片统计: 总计${imageFiles.length}张, 有效${validImageCount}张, 小图片${smallImageCount}张 (< 5KB)`);
+            }
+
+            // 如果提供了漫画ID和章节号，尝试获取精确的总页数
+            if (mangaId && chapter) {
+                const expectedTotalPages = this.getChapterTotalPages(mangaId, chapter);
+
+                if (expectedTotalPages !== null) {
+                    // 有精确的总页数数据，进行精确比较
+                    const isComplete = actualImageCount === expectedTotalPages;
+                    console.log(`📊 章节完整性检查 [漫画${mangaId}-章节${chapter}]: 实际图片${actualImageCount}张, 预期${expectedTotalPages}张, ${isComplete ? '✅完整' : '❌不完整'}`);
+
+                    if (isComplete) {
+                        return true;
+                    } else if (actualImageCount > expectedTotalPages) {
+                        console.log(`⚠️ 实际图片数量(${actualImageCount})超过预期(${expectedTotalPages})，可能有重复下载，仍认为完整`);
+                        return true;
+                    } else {
+                        console.log(`🔄 实际图片数量(${actualImageCount})少于预期(${expectedTotalPages})，需要重新下载`);
+                        return false;
+                    }
+                } else {
+                    console.log(`⚠️ 无法获取章节${chapter}的总页数数据，使用默认检查方式`);
+                }
+            }
+
+            // 没有精确总页数数据时，使用原来的逻辑：10张以上图片认为基本完成
+            const isBasicComplete = actualImageCount >= 10;
+            console.log(`📊 章节基础完整性检查: 实际图片${actualImageCount}张, ${isBasicComplete ? '✅基本完整' : '❌不完整'} (阈值:10张)`);
+            return isBasicComplete;
+
         } catch (error) {
             console.log(`⚠️ 检查章节完整性失败: ${error.message}`);
             return false;
@@ -1394,6 +1512,7 @@ class MangaContentDownloader {
         let downloadedCount = 0;
         let skippedCount = 0;
         let failedCount = 0;
+        let smallImageCount = 0; // 小图片计数
 
         for (const imageInfo of downloadableImages) {
             try {
@@ -1401,11 +1520,17 @@ class MangaContentDownloader {
                 const fileName = `${imageInfo.order}.png`;
                 const filePath = path.join(chapterDir, fileName);
 
-                // 检查文件是否已存在
+                // 检查文件是否已存在且大小合格
                 if (await fs.pathExists(filePath)) {
-                    console.log(`⏭️ 文件已存在，跳过: ${fileName}`);
-                    skippedCount++;
-                    continue;
+                    if (await this.isImageSizeValid(filePath, 5)) {
+                        console.log(`⏭️ 文件已存在且合格，跳过: ${fileName}`);
+                        skippedCount++;
+                        continue;
+                    } else {
+                        // 文件存在但太小，删除后重新下载
+                        await fs.remove(filePath);
+                        console.log(`🗑️ 删除小图片文件，准备重新下载: ${fileName}`);
+                    }
                 }
 
                 const imageType = imageInfo.isBlob ? 'blob' : 'http';
@@ -1421,8 +1546,17 @@ class MangaContentDownloader {
                         omitBackground: false
                     });
 
+                    const sizeKB = buffer.length / 1024;
+
+                    // 检查下载的图片大小
+                    if (sizeKB < 5) {
+                        console.log(`⚠️ 图片太小，跳过保存: ${fileName} (${sizeKB.toFixed(1)} KB < 5KB)`);
+                        smallImageCount++;
+                        continue;
+                    }
+
                     await fs.writeFile(filePath, buffer);
-                    console.log(`💾 保存成功: ${fileName} (${(buffer.length / 1024).toFixed(1)} KB, ${imageType})`);
+                    console.log(`💾 保存成功: ${fileName} (${sizeKB.toFixed(1)} KB, ${imageType})`);
                     downloadedCount++;
                 } else {
                     console.error(`❌ 未找到图片元素: p=${imageInfo.order}`);
@@ -1439,6 +1573,7 @@ class MangaContentDownloader {
             console.log(`   - 成功下载: ${downloadedCount} 张`);
             console.log(`   - 跳过已存在: ${skippedCount} 张`);
             console.log(`   - 下载失败: ${failedCount} 张`);
+            console.log(`   - 跳过小图片: ${smallImageCount} 张 (< 5KB)`);
             console.log(`   - 总计处理: ${downloadableImages.length} 张 (blob=${blobCount}, http=${httpCount})`);
 
             return downloadedCount;
@@ -1643,6 +1778,113 @@ class MangaContentDownloader {
      */
     sanitizeFileName(fileName) {
         return fileName.replace(/[<>:"/\\|?*]/g, '_').trim();
+    }
+
+    /**
+     * 检查图片文件大小是否合格（大于等于5KB）
+     */
+    async isImageSizeValid(filePath, minSizeKB = 5) {
+        try {
+            if (!(await fs.pathExists(filePath))) {
+                return false;
+            }
+            const stats = await fs.stat(filePath);
+            const sizeKB = stats.size / 1024;
+            return sizeKB >= minSizeKB;
+        } catch (error) {
+            console.log(`⚠️ 检查文件大小失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * 清理章节目录中的小图片文件（小于5KB）
+     */
+    async cleanupSmallImages(chapterDir, minSizeKB = 5) {
+        try {
+            if (!(await fs.pathExists(chapterDir))) {
+                return { deletedCount: 0, totalChecked: 0 };
+            }
+
+            const files = await fs.readdir(chapterDir);
+            const imageFiles = files.filter(file =>
+                /\.(png|jpg|jpeg|webp)$/i.test(file)
+            );
+
+            let deletedCount = 0;
+            let totalChecked = imageFiles.length;
+
+            console.log(`🧹 开始清理小图片文件 (< ${minSizeKB}KB): 检查 ${totalChecked} 个文件`);
+
+            for (const file of imageFiles) {
+                const filePath = path.join(chapterDir, file);
+                const stats = await fs.stat(filePath);
+                const sizeKB = stats.size / 1024;
+
+                if (sizeKB < minSizeKB) {
+                    await fs.remove(filePath);
+                    console.log(`🗑️ 删除小图片: ${file} (${sizeKB.toFixed(1)}KB < ${minSizeKB}KB)`);
+                    deletedCount++;
+                }
+            }
+
+            console.log(`✅ 清理完成: 删除 ${deletedCount}/${totalChecked} 个小图片文件`);
+            return { deletedCount, totalChecked };
+
+        } catch (error) {
+            console.error(`❌ 清理小图片失败: ${error.message}`);
+            return { deletedCount: 0, totalChecked: 0 };
+        }
+    }
+
+    /**
+     * 标准化图片文件名（处理 1-xxxx.jpg 格式，重命名为 1.jpg）
+     */
+    async normalizeImageFileNames(chapterDir) {
+        try {
+            if (!(await fs.pathExists(chapterDir))) {
+                return { renamedCount: 0, totalChecked: 0 };
+            }
+
+            const files = await fs.readdir(chapterDir);
+            const imageFiles = files.filter(file =>
+                /\.(png|jpg|jpeg|webp)$/i.test(file)
+            );
+
+            let renamedCount = 0;
+            let totalChecked = imageFiles.length;
+
+            console.log(`📝 开始标准化文件名: 检查 ${totalChecked} 个文件`);
+
+            for (const file of imageFiles) {
+                // 匹配 数字-任意字符.扩展名 的格式
+                const match = file.match(/^(\d+)-.*\.([^.]+)$/i);
+                if (match) {
+                    const pageNumber = match[1];
+                    const extension = match[2];
+                    const newFileName = `${pageNumber}.${extension}`;
+
+                    const oldPath = path.join(chapterDir, file);
+                    const newPath = path.join(chapterDir, newFileName);
+
+                    // 检查新文件名是否已存在
+                    if (!(await fs.pathExists(newPath))) {
+                        await fs.move(oldPath, newPath);
+                        console.log(`📝 重命名: ${file} → ${newFileName}`);
+                        renamedCount++;
+                    } else {
+                        console.log(`⚠️ 目标文件已存在，跳过重命名: ${file} → ${newFileName}`);
+                    }
+                }
+            }
+
+            console.log(`✅ 文件名标准化完成: 重命名 ${renamedCount}/${totalChecked} 个文件`);
+            return { renamedCount, totalChecked };
+
+        } catch (error) {
+            console.error(`❌ 标准化文件名失败: ${error.message}`);
+            return { renamedCount: 0, totalChecked: 0 };
+        }
     }
 }
 

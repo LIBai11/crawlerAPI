@@ -43,8 +43,8 @@ const devtools = {
         try {
             // 解密enc_code1和enc_code2来获取图片信息
             const key1 = "ZsfOA40m7kWjodMH"; // 默认密钥1
-            const key2 = "8enRS43hvFwocD7T"; // 默认密钥2
-            const urlKey = "gym9zc8DLpZYvPQT"; // URL解密密钥
+            const key2 = "aGzU9QOeLVaK3rnL"; // 默认密钥2
+            const urlKey = "TJloldeXW7EJOfrd"; // URL解密密钥
 
             let imageInfo = {
                 img_type: "",
@@ -81,7 +81,7 @@ const devtools = {
                     imageInfo.urls__direct = decryptedUrl;
                     console.log('URL解密成功:', decryptedUrl);
                 } catch (e) {
-                    console.warn('URL解密失败，尝试其他密钥:', e);
+                    console.warn('URL解密失败，尝试其他密钥');
                     // 如果URL密钥失败，尝试其他密钥
                     try {
                         const parsedEncCode2 = CryptoJS.enc.Base64.parse(mhInfo.enc_code2).toString(CryptoJS.enc.Utf8);
@@ -517,7 +517,7 @@ module.exports = {
 
 // 如果直接运行此文件，提供测试示例
 if (require.main === module) {
-    const testCDATA = "T2NCRml4SWc4MlIrU2djRytiMmlGZHVXVmpsTS9FZnFHS1ZnTTlhbEphK2hzb3psRkxiYXlHQ2xQNFA5VWhWWHVVTmJNelZrM3B1MUNhSWNUK3RaT1FZMjFlTDZWMnVSVmwyV1Z0VjhzUm0rcmZqdmZ3bVBua01XOERNYXFYQU9OaVk3TDJibTNjQ0NxVGZndS9xRmxCUDhTejRqdElWKzU3TThQZEtPWHpvaXNoZDVMUGpId1p6Z1FTWG44WC9McWpHMFF3TnoraGlPa3ErU2UrUDdtQVppWXFZY1NIL0RBYzY4dkJGTWE0cWFtSWNCRVFEUm5mZ1RBTTJtL2ZHb2dIc3crOUh5Q1VQMVJBV2lWazhkUkNzbkMvckdIVkRDaGRIY0VEU0pFTVMrakxacnhuQ3hrcWYzUUx3UTFBeHY5TUpIQWw1RjlYaWpzS1k0TVViZmZCUVlOeUJqclFrcGkwZFpDZStXU1I4ZDB1c0VSNzJvb0ZuNGt0UGJUYXZNM3dIRlJXT3VCK2VmYjJLVjV6bkNydkRXZVU1T3p4aEFpVkx3TnArQ1UySEdsM0hlT2ZLU0M2WkR6VThrWTRtbnZEdEZrZUdIc3craGh6am9wTU1oZ3V2UHhUOGV0dG1tejdaZVk3OVQySjlIeW9ad1Y2RVo2Yk1wTFhjMEVBY3BQS0ZQMk9ZeWtQa2VkL0tPT3VkRmd1cGRkbExYRHNlYWw3dzVqdnVya1lTM3ZiZmcyL2haTHppbnZRUDhhd0d2TXlCeVFMY2JNaVRXNFZjNDZkNi9qN0VLOGFLWXhzOFV2Ym8zOU5vNVY5cUVzUWpMbjRETGIxU3k0VHJGdjhxWFUxQlBqdGRjaEp2VE5UZlJOdUlFY1dMWDMvMWk3U3M4anJEdzVNUUNuWTN6L3BOdWc5MENFeFZaOXN2ekdXZGVnK0hqR3dzZm9NQWFjVU9zSG51TGdyL0g4bk0rYWRGRTkzTUdWcmZ6YWZoaGc2aUsrL0FnM0g5ZjdkRGRvbnVNT1gvOHNrVDV2VmEzM2NYRksrdE9IblhHTjB5Q2xSUFdnRnM1ZXg5S2pQQjJ5R3JvdDh1RjEwalAzQ2JSaGNCZ2FQRnZwVm1sUjA3em11N21uT3piQkE9PQ==";
+    const testCDATA = "MXZlSHlDbFlCQnpxYllSSGJ0UU83OWMrUjdCVmg0TEppU0haa0RUdmNKalp1Mzc0VFpVa29xUzhXYjZEZkRXT3JwSFRiUENOUE0zeFpwbGRSUXJ2eG1Dckxmck9QcER5YndlNVg2clhEaTNrVHdqU21vODdnaUtlb2srcGszaGNsQVRaZmZ3LzF4ekhnclZWMDVrbDRENEEyYzBMNGNDSGlmMmpvMEZpZjg0R0xWVEt3dEE2WXFvRDV5ZURuV09IWTcwQ2xMTHdlUElROWUwZk1hbUpxYVNhaENmVU9MbEk2ZGZ3RFNJTHJtMHQ2U3NEY1dqRDVaWTBubVVUSHUzalB1OHFQL2FMWk9HeFJnT2JMNUErdDc5a095dE9TUHllYVQ4Q0lHdEZibWx3Tmd0TFJiMXRnRUI4M3ZmWUkzUno1N0JPV3kyRFhheE4zcWxHZS8yK2QzdG1lMi9YYy9SamlGdlFxRk1BZks1aE5WTE90VlZ4Rm9CQmx2R3dHOVpqNWxjZ1lHdWw5cTRuZy9rSHpMdHVwSG5hdXVpd0JOUkZ3ay9EaW5hTEhub09WaVFKMWc1U0NnazVQcG1UREl4TFhPbnloZkw5RENzTFJsSHIxNmU5VnZ3QVNiWjdidFc5R1pVVWNzQmsvT2h4NzFQZy95dzI0dWpiVlpSMGhVd293K2FLek1RVzJjNVMxSzAxSGc0NHRueU85QkNXV3o3S1RBZC9BL0xWV08rZWlzUjRqYlk1Y3BMTStCRDdoUk5DSFVCUC9ZSU9SdURPaWUwaUZqS2NUZG92Q3Vyc3BreTJpUjRHWWwyZVFWbi9FU2U0N2U2Y1hlWDBnV043dVYrV2tBd2NtYUZranNRckZ6TlIzRXU5Y2lFcXh5VmZjZDR0N1lSc0wydEdLYU1GLzJvbzYwejlISFJUVmNWa2NyUkg=";
 
     // console.log('=== 基础解密测试 ===');
     // const result = decryptCDATA(testCDATA);
@@ -527,7 +527,7 @@ if (require.main === module) {
 
     console.log('=== 完整数据解析测试 ===');
     try {
-        const fullData = parseFullMangaData(testCDATA);
+        const fullData = parseFullMangaData(testCDATA, 'w57pVEV5N9vENbQ2');
         console.log('解析的mh_info:');
         console.log(JSON.stringify(fullData.mh_info, null, 2));
         // console.log('\n解析的image_info:');
@@ -583,7 +583,7 @@ if (require.main === module) {
         // 检查文件是否存在
         if (fs.existsSync(webpFilePath)) {
             console.log(`找到文件: ${webpFilePath}`);
-            const decryptedBuffer = decryptWebpFile(webpFilePath, 'VvQpoFwZC1UnfO0B', outputPath);
+            const decryptedBuffer = decryptWebpFile(webpFilePath, '8enRS43hvFwocD7T', outputPath);
             console.log('WebP 文件解密成功！');
             // 保存
             fs.writeFileSync(outputPath, decryptedBuffer);
