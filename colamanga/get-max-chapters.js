@@ -8,8 +8,8 @@ class MaxChapterCollector {
         this.page = null;
         this.mangaList = [];
         this.outputDir = '/Users/likaixuan/Documents/manga';
-        this.inputFile = path.join(__dirname, 'manga-ids.json');
-        this.outputFile = path.join(__dirname, 'manga-ids.json'); // 直接更新原文件
+        this.inputFile = path.join('/Users/likaixuan/Documents/manga', 'manga-ids.json');
+        this.outputFile = path.join('/Users/likaixuan/Documents/manga', 'manga-ids.json'); // 直接更新原文件
     }
 
     async init() {
@@ -161,9 +161,9 @@ class MaxChapterCollector {
         // 智能并发数设置
         let defaultConcurrency = 3;
         if (this.mangaList.length <= 20) {
-            defaultConcurrency = 2; // 少量漫画用较低并发
+            defaultConcurrency = 5; // 少量漫画用较低并发
         } else if (this.mangaList.length >= 100) {
-            defaultConcurrency = 5; // 大量漫画用较高并发
+            defaultConcurrency = 10; // 大量漫画用较高并发
         }
         
         const concurrency = parseInt(process.argv[3]) || defaultConcurrency;

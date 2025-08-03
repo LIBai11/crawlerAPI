@@ -11,7 +11,7 @@ const path = require('path');
  */
 class MangaContentDownloader {
     constructor(options = {}) {
-        this.outputDir = 'E:\\manga';
+        this.outputDir = '/Users/likaixuan/Documents/manga';
 
         // 并行配置
         this.parallelConfig = {

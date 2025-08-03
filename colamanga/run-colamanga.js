@@ -56,7 +56,7 @@ class ColamangaCrawler {
             if (mangaId && mangaName) {
                 await downloader.downloadMangaContent(mangaId, mangaName, chapter);
             } else {
-                const mangaListFile = path.join('./manga-ids.json');
+                const mangaListFile = path.join('/Users/likaixuan/Documents/manga/manga-ids.json');
                 if (await fs.pathExists(mangaListFile)) {
                     await downloader.downloadFromMangaList(mangaListFile, startIndex, count, maxChapters);
                 } else {

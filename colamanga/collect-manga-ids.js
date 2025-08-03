@@ -29,7 +29,7 @@ class MangaIdCollector {
     }
 
     async collectMangaIds() {
-        const baseUrl = 'https://www.colamanga.com/show?orderBy=weeklyCount&status=2';
+        const baseUrl = 'https://www.colamanga.com/show?orderBy=monthlyCount&status=1';
         console.log(`📖 开始收集漫画ID，目标URL: ${baseUrl}`);
 
         // 先访问第一页获取总页数
