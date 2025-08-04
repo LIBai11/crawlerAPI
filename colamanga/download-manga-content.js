@@ -259,30 +259,56 @@ class MangaContentDownloader {
                         imgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         await new Promise(resolve => setTimeout(resolve, 200));
 
-                        // 创建 canvas 并绘制图片
-                        const canvas = document.createElement('canvas');
-                        canvas.width = imgElement.naturalWidth;
-                        canvas.height = imgElement.naturalHeight;
-                        const ctx = canvas.getContext('2d');
+                        // 对于跨域图片，尝试使用 fetch + canvas 方法
+                        if (imgElement.src.startsWith('http') && !imgElement.src.includes(window.location.hostname)) {
+                            // 跨域 HTTP 图片，使用 fetch 方法避免 canvas 污染
+                            const response = await fetch(imgElement.src);
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
 
-                        // 绘制图片到 canvas
-                        ctx.drawImage(imgElement, 0, 0);
+                            const arrayBuffer = await response.arrayBuffer();
+                            const uint8Array = new Uint8Array(arrayBuffer);
+                            let binary = '';
+                            for (let i = 0; i < uint8Array.length; i++) {
+                                binary += String.fromCharCode(uint8Array[i]);
+                            }
+                            const base64Data = btoa(binary);
 
-                        // 获取 base64 数据
-                        const base64DataUrl = canvas.toDataURL('image/png');
-                        const base64Data = base64DataUrl.split(',')[1]; // 移除 data:image/png;base64, 前缀
+                            return {
+                                success: true,
+                                data: base64Data,
+                                size: arrayBuffer.byteLength,
+                                contentType: response.headers.get('Content-Type') || 'image/jpeg',
+                                attempts: attempt,
+                                method: 'fetch'
+                            };
+                        } else {
+                            // 同域或 blob 图片，使用 canvas 方法
+                            const canvas = document.createElement('canvas');
+                            canvas.width = imgElement.naturalWidth;
+                            canvas.height = imgElement.naturalHeight;
+                            const ctx = canvas.getContext('2d');
 
-                        // 估算数据大小（base64 编码后的大小约为原始数据的 4/3）
-                        const estimatedSize = Math.floor(base64Data.length * 3 / 4);
+                            // 绘制图片到 canvas
+                            ctx.drawImage(imgElement, 0, 0);
 
-                        return {
-                            success: true,
-                            data: base64Data,
-                            size: estimatedSize,
-                            contentType: 'image/png',
-                            attempts: attempt,
-                            method: 'canvas'
-                        };
+                            // 获取 base64 数据
+                            const base64DataUrl = canvas.toDataURL('image/png');
+                            const base64Data = base64DataUrl.split(',')[1]; // 移除 data:image/png;base64, 前缀
+
+                            // 估算数据大小（base64 编码后的大小约为原始数据的 4/3）
+                            const estimatedSize = Math.floor(base64Data.length * 3 / 4);
+
+                            return {
+                                success: true,
+                                data: base64Data,
+                                size: estimatedSize,
+                                contentType: 'image/png',
+                                attempts: attempt,
+                                method: 'canvas'
+                            };
+                        }
                     } catch (error) {
                         if (attempt === retries) {
                             return {
@@ -290,7 +316,7 @@ class MangaContentDownloader {
                                 error: error.message,
                                 order: order,
                                 attempts: attempt,
-                                method: 'canvas'
+                                method: error.message.includes('Tainted') ? 'canvas-tainted' : 'canvas'
                             };
                         }
                         // 继续重试
