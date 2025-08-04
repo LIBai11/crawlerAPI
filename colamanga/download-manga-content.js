@@ -135,7 +135,7 @@ class MangaContentDownloader {
      */
     async createBrowserInstance(instanceId) {
         const context = await chromium.launchPersistentContext('', {
-            headless: false,
+            headless: true,
             channel: 'chrome',
             args: [
                 '--no-sandbox',
@@ -168,6 +168,12 @@ class MangaContentDownloader {
 
         // 设置图片拦截器
         await this.setupImageInterceptor(page);
+
+        // 确认拦截器启动状态
+        const interceptorStarted = await page.evaluate(() => window.__imageInterceptorStarted);
+        if (interceptorStarted) {
+            console.log(`🎯 [浏览器 ${instanceId}] 图片拦截器已启动（支持立即数据获取）`);
+        }
 
         return {
             id: instanceId,
@@ -234,31 +240,142 @@ class MangaContentDownloader {
         await page.addInitScript(() => {
             window.__interceptedImages = [];
 
-            // 立即获取图片数据的函数
-            const fetchImageData = async (src, order) => {
-                try {
-                    const response = await fetch(src);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // 使用 canvas 获取图片数据 - 避免 fetch 消耗流量，直接从已加载的图片获取
+            const getImageDataFromCanvas = async (imgElement, order, retries = 3) => {
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    try {
+                        // 检查图片是否完全加载
+                        if (!imgElement.complete || imgElement.naturalWidth === 0) {
+                            if (attempt < retries) {
+                                // 等待图片加载完成
+                                await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+                                continue;
+                            } else {
+                                throw new Error('图片未完全加载');
+                            }
+                        }
+
+                        // 滚动到图片位置确保可见
+                        imgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        // 创建 canvas 并绘制图片
+                        const canvas = document.createElement('canvas');
+                        canvas.width = imgElement.naturalWidth;
+                        canvas.height = imgElement.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+
+                        // 绘制图片到 canvas
+                        ctx.drawImage(imgElement, 0, 0);
+
+                        // 获取 base64 数据
+                        const base64DataUrl = canvas.toDataURL('image/png');
+                        const base64Data = base64DataUrl.split(',')[1]; // 移除 data:image/png;base64, 前缀
+
+                        // 估算数据大小（base64 编码后的大小约为原始数据的 4/3）
+                        const estimatedSize = Math.floor(base64Data.length * 3 / 4);
+
+                        return {
+                            success: true,
+                            data: base64Data,
+                            size: estimatedSize,
+                            contentType: 'image/png',
+                            attempts: attempt,
+                            method: 'canvas'
+                        };
+                    } catch (error) {
+                        if (attempt === retries) {
+                            return {
+                                success: false,
+                                error: error.message,
+                                order: order,
+                                attempts: attempt,
+                                method: 'canvas'
+                            };
+                        }
+                        // 继续重试
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
                     }
-                    const arrayBuffer = await response.arrayBuffer();
-                    const uint8Array = new Uint8Array(arrayBuffer);
-                    let binary = '';
-                    for (let i = 0; i < uint8Array.length; i++) {
-                        binary += String.fromCharCode(uint8Array[i]);
-                    }
-                    const base64 = btoa(binary);
-                    return {
-                        success: true,
-                        data: base64,
-                        size: arrayBuffer.byteLength,
-                        contentType: response.headers.get('content-type') || 'image/jpeg'
-                    };
-                } catch (error) {
-                    console.error(`❌ 立即获取图片数据失败 order=${order}:`, error.message);
-                    return { success: false, error: error.message };
                 }
             };
+
+            // 串行获取所有图片数据的函数 - 使用 canvas 方法
+            const fetchAllImageData = async () => {
+                const images = window.__interceptedImages || [];
+                let successCount = 0;
+                let failCount = 0;
+                const logs = []; // 收集日志信息
+
+                for (let i = 0; i < images.length; i++) {
+                    const imageInfo = images[i];
+
+                    // 跳过已经获取数据的图片
+                    if (imageInfo.dataFetched) {
+                        continue;
+                    }
+
+                    // 跳过非图片URL
+                    if (!imageInfo.src || (!imageInfo.isBase64 && !imageInfo.isBlob && !imageInfo.isHttp)) {
+                        continue;
+                    }
+
+                    // 找到对应的 img 元素
+                    const imgElement = imageInfo.element ? imageInfo.element.querySelector('img') : null;
+
+                    if (imageInfo.isBase64) {
+                        // base64 图片直接处理
+                        imageInfo.dataFetched = true;
+                        imageInfo.imageData = {
+                            success: true,
+                            data: imageInfo.src.split(',')[1],
+                            contentType: imageInfo.src.split(';')[0].split(':')[1] || 'image/jpeg',
+                            method: 'base64'
+                        };
+                        const logMsg = `🎯 处理base64图片: order=${imageInfo.order}`;
+                        imageInfo.logMessage = logMsg;
+                        logs.push(logMsg);
+                        successCount++;
+                    } else if (imgElement) {
+                        // 使用 canvas 方法获取图片数据
+                        const logMsg = `🎯 开始canvas获取图片: order=${imageInfo.order} (${imageInfo.isBlob ? 'blob' : 'http'})`;
+                        logs.push(logMsg);
+
+                        const imageData = await getImageDataFromCanvas(imgElement, imageInfo.order);
+                        imageInfo.dataFetched = true;
+                        imageInfo.imageData = imageData;
+
+                        if (imageData.success) {
+                            const successMsg = ` -> ✅ 成功 (${(imageData.size/1024).toFixed(1)}KB, ${imageData.attempts}次尝试, canvas方法)`;
+                            imageInfo.logMessage = logMsg + successMsg;
+                            logs.push(logMsg + successMsg);
+                            successCount++;
+                        } else {
+                            const failMsg = ` -> ❌ 失败: ${imageData.error} (${imageData.attempts}次尝试, canvas方法)`;
+                            imageInfo.logMessage = logMsg + failMsg;
+                            logs.push(logMsg + failMsg);
+                            failCount++;
+                        }
+                    } else {
+                        // 找不到对应的 img 元素
+                        const errorMsg = `❌ 找不到对应的img元素: order=${imageInfo.order}`;
+                        imageInfo.logMessage = errorMsg;
+                        logs.push(errorMsg);
+                        imageInfo.dataFetched = true;
+                        imageInfo.imageData = { success: false, error: '找不到img元素' };
+                        failCount++;
+                    }
+                }
+
+                return {
+                    successCount,
+                    failCount,
+                    totalProcessed: successCount + failCount,
+                    logs: logs // 返回日志信息
+                };
+            };
+
+            // 暴露串行获取函数供外部调用
+            window.__fetchAllImageData = fetchAllImageData;
 
             // 定期检查 .mh_comicpic 内的 img 元素
             const checkImages = async () => {
@@ -290,34 +407,14 @@ class MangaContentDownloader {
                                     imageData: null
                                 };
 
-                                // 如果是 base64，直接保存
+                                // 第一阶段：只收集图片信息，不立即获取数据
+                                imageInfo.dataFetched = false;
+                                imageInfo.imageData = null;
+
                                 if (imageInfo.isBase64) {
-                                    imageInfo.dataFetched = true;
-                                    imageInfo.imageData = {
-                                        success: true,
-                                        data: img.src.split(',')[1], // 移除 data:image/xxx;base64, 前缀
-                                        contentType: img.src.split(';')[0].split(':')[1] || 'image/jpeg'
-                                    };
-                                    console.log(`🎯 拦截到base64图片: order=${order}`);
+                                    imageInfo.logMessage = `🎯 发现base64图片: order=${order}`;
                                 } else {
-                                    // 对于 blob 和 http，立即获取数据
-                                    console.log(`🎯 拦截到${imageInfo.isBlob ? 'blob' : 'http'}图片: order=${order}，立即获取数据...`);
-
-                                    try {
-                                        const imageData = await fetchImageData(img.src, order);
-                                        imageInfo.dataFetched = true;
-                                        imageInfo.imageData = imageData;
-
-                                        if (imageData.success) {
-                                            console.log(`✅ 成功获取图片数据: order=${order}, size=${(imageData.size/1024).toFixed(1)}KB`);
-                                        } else {
-                                            console.log(`❌ 获取图片数据失败: order=${order}, error=${imageData.error}`);
-                                        }
-                                    } catch (error) {
-                                        console.error(`❌ 获取图片数据异常: order=${order}`, error);
-                                        imageInfo.dataFetched = true;
-                                        imageInfo.imageData = { success: false, error: error.message };
-                                    }
+                                    imageInfo.logMessage = `🎯 发现${imageInfo.isBlob ? 'blob' : 'http'}图片: order=${order}`;
                                 }
 
                                 window.__interceptedImages.push(imageInfo);
@@ -334,33 +431,14 @@ class MangaContentDownloader {
                                 existing.isHttp = img.src.startsWith('http');
                                 existing.timestamp = Date.now();
 
-                                // 立即获取数据
+                                // 第一阶段：只更新图片信息，不立即获取数据
+                                existing.dataFetched = false;
+                                existing.imageData = null;
+
                                 if (existing.isBase64) {
-                                    existing.dataFetched = true;
-                                    existing.imageData = {
-                                        success: true,
-                                        data: img.src.split(',')[1],
-                                        contentType: img.src.split(';')[0].split(':')[1] || 'image/jpeg'
-                                    };
-                                    console.log(`🔄 更新为base64图片: order=${order}`);
+                                    existing.logMessage = `🔄 更新为base64图片: order=${order}`;
                                 } else {
-                                    console.log(`🔄 更新为${existing.isBlob ? 'blob' : 'http'}图片: order=${order}，立即获取数据...`);
-
-                                    try {
-                                        const imageData = await fetchImageData(img.src, order);
-                                        existing.dataFetched = true;
-                                        existing.imageData = imageData;
-
-                                        if (imageData.success) {
-                                            console.log(`✅ 成功更新图片数据: order=${order}, size=${(imageData.size/1024).toFixed(1)}KB`);
-                                        } else {
-                                            console.log(`❌ 更新图片数据失败: order=${order}, error=${imageData.error}`);
-                                        }
-                                    } catch (error) {
-                                        console.error(`❌ 更新图片数据异常: order=${order}`, error);
-                                        existing.dataFetched = true;
-                                        existing.imageData = { success: false, error: error.message };
-                                    }
+                                    existing.logMessage = `🔄 更新为${existing.isBlob ? 'blob' : 'http'}图片: order=${order}`;
                                 }
                             }
                         }
@@ -374,7 +452,8 @@ class MangaContentDownloader {
             // 保存 interval ID 以便后续清理
             window.__imageInterceptorInterval = intervalId;
 
-            console.log('🎯 图片拦截器已启动（支持立即数据获取）');
+            // 标记拦截器已启动（不使用 console.log，因为在 evaluate 中不会显示在终端）
+            window.__imageInterceptorStarted = true;
         });
     }
 
@@ -1444,36 +1523,61 @@ class MangaContentDownloader {
                 console.log(`🔍 [浏览器 ${currentBrowser.id}] 拦截进度: 总计${interceptResult.totalCount}张, 有效${interceptResult.validCount}张, 已获取数据${interceptResult.dataFetchedCount}张, 成功${interceptResult.successfulDataCount}张`);
                 console.log(`📊 类型分布: base64:${interceptResult.base64Count}, blob:${interceptResult.blobCount}, http:${interceptResult.httpCount}`);
 
-                // 如果有目标数量且已达到，检查数据是否都已获取
-                if (targetImageCount && interceptResult.successfulDataCount >= targetImageCount) {
-                    console.log(`✅ [浏览器 ${currentBrowser.id}] 已达到目标图片数量且数据获取完成: ${interceptResult.successfulDataCount}/${targetImageCount}`);
-                    return {
-                        success: true,
-                        imageCount: interceptResult.successfulDataCount,
-                        totalImages: interceptResult.totalCount,
-                        dataFetchedCount: interceptResult.dataFetchedCount,
-                        base64Count: interceptResult.base64Count,
-                        blobCount: interceptResult.blobCount,
-                        httpCount: interceptResult.httpCount
-                    };
-                }
-
-                // 检查成功数据数量是否稳定
-                if (interceptResult.successfulDataCount === lastInterceptedCount) {
+                // 检查图片发现数量是否稳定（第一阶段完成）
+                if (interceptResult.validCount === lastInterceptedCount) {
                     stableCount++;
                 } else {
                     stableCount = 0;
-                    lastInterceptedCount = interceptResult.successfulDataCount;
+                    lastInterceptedCount = interceptResult.validCount;
                 }
 
-                // 如果数量稳定且有图片数据，认为完成
-                if (stableCount >= stableThreshold && interceptResult.successfulDataCount > 0) {
-                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片拦截稳定完成: ${interceptResult.successfulDataCount}张（数据已获取）`);
+                // 如果图片发现数量稳定，开始第二阶段：等待图片加载并获取数据
+                if (stableCount >= stableThreshold && interceptResult.validCount > 0) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片发现阶段完成: ${interceptResult.validCount}张`);
+
+                    // 检查是否达到目标数量，如果达到则开始等待图片完全加载
+                    if (targetImageCount && interceptResult.validCount >= targetImageCount) {
+                        console.log(`🎯 [浏览器 ${currentBrowser.id}] 已达到目标图片数量: ${interceptResult.validCount}/${targetImageCount}，开始等待图片完全加载...`);
+
+                        // 等待图片完全加载
+                        await this.waitForImagesFullyLoaded(currentBrowser, targetImageCount);
+                    } else {
+                        console.log(`⏳ [浏览器 ${currentBrowser.id}] 开始等待图片完全加载...`);
+                        await this.waitForImagesFullyLoaded(currentBrowser);
+                    }
+
+                    console.log(`🎨 [浏览器 ${currentBrowser.id}] 开始canvas数据获取阶段...`);
+
+                    // 第二阶段：串行获取所有图片数据
+                    const fetchResult = await currentBrowser.page.evaluate(async () => {
+                        if (window.__fetchAllImageData) {
+                            return await window.__fetchAllImageData();
+                        }
+                        return { successCount: 0, failCount: 0, totalProcessed: 0, logs: [] };
+                    });
+
+                    // 显示浏览器端的日志
+                    if (fetchResult.logs && fetchResult.logs.length > 0) {
+                        console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
+                        for (const log of fetchResult.logs) {
+                            console.log(`   ${log}`);
+                        }
+                    }
+
+                    console.log(`📊 [浏览器 ${currentBrowser.id}] 数据获取完成: 成功${fetchResult.successCount}张, 失败${fetchResult.failCount}张`);
+
+                    // 检查是否达到目标数量
+                    if (targetImageCount && fetchResult.successCount >= targetImageCount) {
+                        console.log(`✅ [浏览器 ${currentBrowser.id}] 已达到目标图片数量: ${fetchResult.successCount}/${targetImageCount}`);
+                    } else if (fetchResult.successCount > 0) {
+                        console.log(`✅ [浏览器 ${currentBrowser.id}] 数据获取完成: ${fetchResult.successCount}张`);
+                    }
+
                     return {
-                        success: true,
-                        imageCount: interceptResult.successfulDataCount,
+                        success: fetchResult.successCount > 0,
+                        imageCount: fetchResult.successCount,
                         totalImages: interceptResult.totalCount,
-                        dataFetchedCount: interceptResult.dataFetchedCount,
+                        dataFetchedCount: fetchResult.totalProcessed,
                         base64Count: interceptResult.base64Count,
                         blobCount: interceptResult.blobCount,
                         httpCount: interceptResult.httpCount
@@ -1760,6 +1864,79 @@ class MangaContentDownloader {
     }
 
     /**
+     * 等待图片完全加载
+     */
+    async waitForImagesFullyLoaded(browserInstance = null, targetImageCount = null) {
+        const currentBrowser = browserInstance || await this.acquireBrowserInstance();
+        console.log(`⏳ [浏览器 ${currentBrowser.id}] 等待图片完全加载...`);
+
+        try {
+            const maxWaitTime = 30000; // 最大等待30秒
+            const startTime = Date.now();
+            let lastLoadedCount = 0;
+            let stableCount = 0;
+            const stableThreshold = 3;
+
+            while (Date.now() - startTime < maxWaitTime) {
+                // 检查图片加载状态
+                const loadStatus = await currentBrowser.page.evaluate(() => {
+                    const comicPics = document.querySelectorAll('.mh_comicpic');
+                    let totalImages = 0;
+                    let loadedImages = 0;
+                    let completeImages = 0;
+
+                    for (const pic of comicPics) {
+                        const img = pic.querySelector('img');
+                        if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'))) {
+                            totalImages++;
+                            if (img.complete) {
+                                completeImages++;
+                                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                                    loadedImages++;
+                                }
+                            }
+                        }
+                    }
+
+                    return { totalImages, loadedImages, completeImages };
+                });
+
+                console.log(`📊 [浏览器 ${currentBrowser.id}] 图片加载状态: ${loadStatus.loadedImages}/${loadStatus.totalImages} 完全加载, ${loadStatus.completeImages}/${loadStatus.totalImages} complete`);
+
+                // 检查是否达到目标数量且完全加载
+                if (targetImageCount && loadStatus.loadedImages >= targetImageCount) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 已达到目标数量且完全加载: ${loadStatus.loadedImages}/${targetImageCount}`);
+                    break;
+                }
+
+                // 检查加载数量是否稳定
+                if (loadStatus.loadedImages === lastLoadedCount) {
+                    stableCount++;
+                } else {
+                    stableCount = 0;
+                    lastLoadedCount = loadStatus.loadedImages;
+                }
+
+                // 如果加载数量稳定且有图片，认为完成
+                if (stableCount >= stableThreshold && loadStatus.loadedImages > 0) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片加载稳定完成: ${loadStatus.loadedImages}张`);
+                    break;
+                }
+
+                // 等待一段时间后重新检查
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
+            console.log(`✅ [浏览器 ${currentBrowser.id}] 图片加载等待完成`);
+        } finally {
+            if (!browserInstance && currentBrowser) {
+                this.releaseBrowserInstance(currentBrowser);
+                console.log(`🔓 [waitForImagesFullyLoaded] 释放临时获取的浏览器实例: ${currentBrowser.id}`);
+            }
+        }
+    }
+
+    /**
      * 下载拦截到的图片（使用拦截到的 base64/blob/http 数据）
      */
     async downloadInterceptedImages(chapterDir, browserInstance = null) {
@@ -1767,14 +1944,24 @@ class MangaContentDownloader {
         console.log(`💾 [浏览器 ${currentBrowser.id}] 开始下载拦截到的图片...`);
 
         try {
-            // 获取所有拦截到的图片信息（只要已成功获取数据的）
+            // 获取所有拦截到的图片信息（包括日志信息）
             const interceptedImages = await currentBrowser.page.evaluate(() => {
                 const images = window.__interceptedImages || [];
                 return images.filter(img => img.dataFetched && img.imageData && img.imageData.success)
                            .sort((a, b) => a.order - b.order);
             });
 
-            console.log(`🔍 找到 ${interceptedImages.length} 张已获取数据的图片`);
+            console.log(`🔍 [浏览器 ${currentBrowser.id}] 找到 ${interceptedImages.length} 张已获取数据的图片`);
+
+            // 显示从浏览器端传递过来的日志信息
+            if (interceptedImages.length > 0) {
+                console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
+                for (const imageInfo of interceptedImages) {
+                    if (imageInfo.logMessage) {
+                        console.log(`   ${imageInfo.logMessage}`);
+                    }
+                }
+            }
 
             if (interceptedImages.length === 0) {
                 console.log(`⚠️ 未找到任何已获取数据的图片`);
