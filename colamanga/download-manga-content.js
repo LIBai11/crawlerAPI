@@ -21,7 +21,7 @@ class MangaContentDownloader {
         this.parallelConfig = {
             enabled: true, // 默认启用并行，除非明确设置为false
             maxConcurrent: 2, // 最大并发漫画数
-            retryAttempts:  2,
+            retryAttempts: 2,
             retryDelay: options.retryDelay || 1000
         };
 
@@ -140,7 +140,7 @@ class MangaContentDownloader {
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                
+
             ],
             // ignoreDefaultArgs: [
             //     '--enable-automation',
@@ -371,7 +371,7 @@ class MangaContentDownloader {
                         imageInfo.imageData = imageData;
 
                         if (imageData.success) {
-                            const successMsg = ` -> ✅ 成功 (${(imageData.size/1024).toFixed(1)}KB, ${imageData.attempts}次尝试, canvas方法)`;
+                            const successMsg = ` -> ✅ 成功 (${(imageData.size / 1024).toFixed(1)}KB, ${imageData.attempts}次尝试, canvas方法)`;
                             imageInfo.logMessage = logMsg + successMsg;
                             logs.push(logMsg + successMsg);
                             successCount++;
@@ -536,7 +536,7 @@ class MangaContentDownloader {
                     window.__blobUrls.forEach(item => {
                         try {
                             URL.revokeObjectURL(item.blobUrl);
-                        } catch (e) {}
+                        } catch (e) { }
                     });
                     window.__blobUrls = [];
                 }
@@ -598,11 +598,11 @@ class MangaContentDownloader {
         }
 
         console.log(`📖 漫画列表包含 ${mangaList.length} 个漫画`);
-        
+
         // 应用范围限制
         const targetList = count ? mangaList.slice(startIndex, startIndex + count) : mangaList.slice(startIndex);
         console.log(`🎯 目标下载 ${targetList.length} 个漫画 (从索引 ${startIndex} 开始)`);
-        
+
         // 根据配置选择下载模式
         if (this.parallelConfig.enabled && targetList.length > 1) {
             console.log(`� 使用并行模式下载漫画`);
@@ -618,18 +618,18 @@ class MangaContentDownloader {
      */
     async checkMangaCompletion(manga) {
         const mangaDir = path.join(this.outputDir, this.sanitizeFileName(manga.name));
-        
+
         // 检查漫画目录是否存在
         if (!(await fs.pathExists(mangaDir))) {
             return false;
         }
-        
+
         // 检查是否有漫画信息文件
         const infoFile = path.join(mangaDir, 'manga-info.json');
         if (!(await fs.pathExists(infoFile))) {
             return false;
         }
-        
+
         // 检查章节目录数量
         const entries = await fs.readdir(mangaDir);
         const chapterDirs = entries.filter(entry => entry.startsWith('第') && entry.includes('章'));
@@ -1263,28 +1263,28 @@ class MangaContentDownloader {
             while (scrollAttempts < maxScrollAttempts) {
                 // 先滚动页面
                 const scrollInfo = await currentBrowser.page.evaluate(() => {
-                const currentScroll = window.scrollY;
-                const pageHeight = document.body.scrollHeight;
-                const windowHeight = window.innerHeight;
-                const isAtBottom = currentScroll + windowHeight >= pageHeight - 100;
+                    const currentScroll = window.scrollY;
+                    const pageHeight = document.body.scrollHeight;
+                    const windowHeight = window.innerHeight;
+                    const isAtBottom = currentScroll + windowHeight >= pageHeight - 100;
 
-                // 持续向下滚动，增大滚动幅度
-                window.scrollBy({
-                    top: 1500, // 增加滚动幅度从800到1500
-                    behavior: 'smooth'
+                    // 持续向下滚动，增大滚动幅度
+                    window.scrollBy({
+                        top: 1500, // 增加滚动幅度从800到1500
+                        behavior: 'smooth'
+                    });
+
+                    return {
+                        currentScroll,
+                        pageHeight,
+                        windowHeight,
+                        isAtBottom,
+                        newScroll: window.scrollY
+                    };
                 });
 
-                return {
-                    currentScroll,
-                    pageHeight,
-                    windowHeight,
-                    isAtBottom,
-                    newScroll: window.scrollY
-                };
-            });
-
-            // 等待滚动和图片加载，减少等待时间以加快滚动速度
-            await new Promise(resolve => setTimeout(resolve, 500));
+                // 等待滚动和图片加载，减少等待时间以加快滚动速度
+                await new Promise(resolve => setTimeout(resolve, 500));
 
                 // 检查当前图片数量（直接检查img元素）
                 const currentImageCount = await currentBrowser.page.evaluate(() => {
@@ -1316,7 +1316,7 @@ class MangaContentDownloader {
                     return { totalCount, successfulCount };
                 });
 
-                console.log(`📊 [浏览器 ${currentBrowser.id}] 滚动第${scrollAttempts + 1}次 (步长1500px): 发现 ${currentImageCount} 张图片，拦截 ${interceptedResult.totalCount} 张，成功获取数据 ${interceptedResult.successfulCount} 张 (滚动位置: ${scrollInfo.currentScroll})`);
+                // console.log(`📊 [浏览器 ${currentBrowser.id}] 滚动第${scrollAttempts + 1}次 (步长1500px): 发现 ${currentImageCount} 张图片，拦截 ${interceptedResult.totalCount} 张，成功获取数据 ${interceptedResult.successfulCount} 张 (滚动位置: ${scrollInfo.currentScroll})`);
 
                 // 如果有目标图片数量，检查是否已达到（基于成功获取数据的图片）
                 if (targetImageCount && interceptedResult.successfulCount >= targetImageCount) {
@@ -1328,17 +1328,17 @@ class MangaContentDownloader {
                 if (currentImageCount > lastImageCount || interceptedResult.successfulCount > lastInterceptedCount) {
                     const newImages = currentImageCount - lastImageCount;
                     const newIntercepted = interceptedResult.successfulCount - lastInterceptedCount;
-                    console.log(`📈 [浏览器 ${currentBrowser.id}] 新增 ${newImages} 张图片，新拦截 ${newIntercepted} 张`);
+                    // console.log(`📈 [浏览器 ${currentBrowser.id}] 新增 ${newImages} 张图片，新拦截 ${newIntercepted} 张`);
                     noNewImagesCount = 0; // 重置计数器
                     lastImageCount = currentImageCount;
                     lastInterceptedCount = interceptedResult.successfulCount;
                 } else {
                     noNewImagesCount++;
-                    console.log(`⏳ [浏览器 ${currentBrowser.id}] 连续 ${noNewImagesCount}/${noNewImagesThreshold} 次没有新图片`);
+                    // console.log(`⏳ [浏览器 ${currentBrowser.id}] 连续 ${noNewImagesCount}/${noNewImagesThreshold} 次没有新图片`);
 
                     // 如果连续多次没有新图片，且已经滚动到底部，认为完成
                     if (noNewImagesCount >= noNewImagesThreshold) {
-                        console.log(`✅ [浏览器 ${currentBrowser.id}] 连续${noNewImagesThreshold}次没有新图片，滚动完成`);
+                        // console.log(`✅ [浏览器 ${currentBrowser.id}] 连续${noNewImagesThreshold}次没有新图片，滚动完成`);
                         console.log(`📊 [浏览器 ${currentBrowser.id}] 最终发现 ${currentImageCount} 张图片，拦截 ${interceptedResult.totalCount} 张，成功获取数据 ${interceptedResult.successfulCount} 张`);
                         break;
                     }
@@ -1420,66 +1420,66 @@ class MangaContentDownloader {
 
         try {
             const pageStatus = await currentBrowser.page.evaluate(() => {
-            const comicPics = document.querySelectorAll('.mh_comicpic');
-            const allImgs = document.querySelectorAll('img');
-            const blobUrls = window.__blobUrls || [];
+                const comicPics = document.querySelectorAll('.mh_comicpic');
+                const allImgs = document.querySelectorAll('img');
+                const blobUrls = window.__blobUrls || [];
 
-            let status = {
-                comicPicsCount: comicPics.length,
-                allImgsCount: allImgs.length,
-                blobUrlsCount: blobUrls.length,
-                sampleElements: [],
-                sampleImgs: []
-            };
+                let status = {
+                    comicPicsCount: comicPics.length,
+                    allImgsCount: allImgs.length,
+                    blobUrlsCount: blobUrls.length,
+                    sampleElements: [],
+                    sampleImgs: []
+                };
 
-            // 检查前5个.mh_comicpic元素
-            for (let i = 0; i < Math.min(5, comicPics.length); i++) {
-                const pic = comicPics[i];
-                const img = pic.querySelector('img');
-                const loadingElement = pic.querySelector('.mh_loading');
-                const errorElement = pic.querySelector('.mh_loaderr');
-                const pValue = pic.getAttribute('p');
+                // 检查前5个.mh_comicpic元素
+                for (let i = 0; i < Math.min(5, comicPics.length); i++) {
+                    const pic = comicPics[i];
+                    const img = pic.querySelector('img');
+                    const loadingElement = pic.querySelector('.mh_loading');
+                    const errorElement = pic.querySelector('.mh_loaderr');
+                    const pValue = pic.getAttribute('p');
 
-                status.sampleElements.push({
-                    index: i,
-                    pValue: pValue,
-                    hasImg: !!img,
-                    imgSrc: img ? img.src.substring(0, 100) : null,
-                    imgComplete: img ? img.complete : null,
-                    isLoading: loadingElement ? window.getComputedStyle(loadingElement).display !== 'none' : false,
-                    hasError: errorElement ? window.getComputedStyle(errorElement).display !== 'none' : false
-                });
-            }
+                    status.sampleElements.push({
+                        index: i,
+                        pValue: pValue,
+                        hasImg: !!img,
+                        imgSrc: img ? img.src.substring(0, 100) : null,
+                        imgComplete: img ? img.complete : null,
+                        isLoading: loadingElement ? window.getComputedStyle(loadingElement).display !== 'none' : false,
+                        hasError: errorElement ? window.getComputedStyle(errorElement).display !== 'none' : false
+                    });
+                }
 
-            // 检查前5个img元素
-            for (let i = 0; i < Math.min(5, allImgs.length); i++) {
-                const img = allImgs[i];
-                status.sampleImgs.push({
-                    index: i,
-                    src: img.src.substring(0, 100),
-                    complete: img.complete,
-                    isBlob: img.src.startsWith('blob:')
-                });
-            }
+                // 检查前5个img元素
+                for (let i = 0; i < Math.min(5, allImgs.length); i++) {
+                    const img = allImgs[i];
+                    status.sampleImgs.push({
+                        index: i,
+                        src: img.src.substring(0, 100),
+                        complete: img.complete,
+                        isBlob: img.src.startsWith('blob:')
+                    });
+                }
 
-            return status;
-        });
-
-        console.log(`📊 页面状态:`);
-        console.log(`   .mh_comicpic 元素数量: ${pageStatus.comicPicsCount}`);
-        console.log(`   所有 img 元素数量: ${pageStatus.allImgsCount}`);
-        console.log(`   window.__blobUrls 数量: ${pageStatus.blobUrlsCount}`);
-
-        console.log(`📋 前5个 .mh_comicpic 元素:`);
-        pageStatus.sampleElements.forEach(el => {
-            const status = el.isLoading ? '[加载中]' : el.hasError ? '[失败]' : '[正常]';
-            console.log(`     ${el.index+1}. p=${el.pValue}, hasImg=${el.hasImg}, ${status}, src="${el.imgSrc}", complete=${el.imgComplete}`);
-        });
-
-            console.log(`📋 前5个 img 元素:`);
-            pageStatus.sampleImgs.forEach(img => {
-                console.log(`     ${img.index+1}. src="${img.src}", complete=${img.complete}, isBlob=${img.isBlob}`);
+                return status;
             });
+
+            console.log(`📊 页面状态:`);
+            console.log(`   .mh_comicpic 元素数量: ${pageStatus.comicPicsCount}`);
+            console.log(`   所有 img 元素数量: ${pageStatus.allImgsCount}`);
+            console.log(`   window.__blobUrls 数量: ${pageStatus.blobUrlsCount}`);
+
+            // console.log(`📋 前5个 .mh_comicpic 元素:`);
+            // pageStatus.sampleElements.forEach(el => {
+            //     const status = el.isLoading ? '[加载中]' : el.hasError ? '[失败]' : '[正常]';
+            //     console.log(`     ${el.index + 1}. p=${el.pValue}, hasImg=${el.hasImg}, ${status}, src="${el.imgSrc}", complete=${el.imgComplete}`);
+            // });
+
+            // console.log(`📋 前5个 img 元素:`);
+            // pageStatus.sampleImgs.forEach(img => {
+            //     console.log(`     ${img.index + 1}. src="${img.src}", complete=${img.complete}, isBlob=${img.isBlob}`);
+            // });
 
             return pageStatus;
         } finally {
@@ -1566,7 +1566,7 @@ class MangaContentDownloader {
                         console.log(`🎯 [浏览器 ${currentBrowser.id}] 已达到目标图片数量: ${interceptResult.validCount}/${targetImageCount}，开始等待图片完全加载...`);
 
                         // 等待图片完全加载
-                        await this.waitForImagesFullyLoaded(currentBrowser, targetImageCount);
+                        await this.waitForImagesFullyLoaded(currentBrowser);
                     } else {
                         console.log(`⏳ [浏览器 ${currentBrowser.id}] 开始等待图片完全加载...`);
                         await this.waitForImagesFullyLoaded(currentBrowser);
@@ -1584,10 +1584,10 @@ class MangaContentDownloader {
 
                     // 显示浏览器端的日志
                     if (fetchResult.logs && fetchResult.logs.length > 0) {
-                        console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
-                        for (const log of fetchResult.logs) {
-                            console.log(`   ${log}`);
-                        }
+                        // console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
+                        // for (const log of fetchResult.logs) {
+                        //     console.log(`   ${log}`);
+                        // }
                     }
 
                     console.log(`📊 [浏览器 ${currentBrowser.id}] 数据获取完成: 成功${fetchResult.successCount}张, 失败${fetchResult.failCount}张`);
@@ -1674,209 +1674,209 @@ class MangaContentDownloader {
                 while (Date.now() - startTime < maxWaitTime) {
                     // 检查当前图片加载状态 - 只考虑.mh_loading显示的情况
                     const blobResult = await currentBrowser.page.evaluate(() => {
-                    const comicPics = document.querySelectorAll('.mh_comicpic');
-                    let totalImages = 0;
-                    let blobImages = 0;
-                    let failedImages = 0;
-                    let loadingImages = 0; // 只统计.mh_loading显示的图片
-                    let allSrc = []; // 收集所有图片的src
-                    let blobSrc = []; // 收集blob图片的src
-                    let debugInfo = []; // 调试信息
-
-                    for (let i = 0; i < comicPics.length; i++) {
-                        const pic = comicPics[i];
-                        const img = pic.querySelector('img');
-                        const loadingElement = pic.querySelector('.mh_loading');
-                        const errorElement = pic.querySelector('.mh_loaderr');
-                        const pValue = pic.getAttribute('p');
-
-                        // 检查是否有加载中元素显示 - 这是唯一的加载中判断标准
-                        if (loadingElement) {
-                            const loadingStyle = window.getComputedStyle(loadingElement);
-                            if (loadingStyle.display !== 'none') {
-                                loadingImages++;
-                                totalImages++; // 加载中的也算入总数
-                                debugInfo.push(`图片${i+1}(p=${pValue}): 正在加载中(.mh_loading显示)`);
-                                continue;
-                            }
-                        }
-
-                        // 检查是否有错误元素显示
-                        if (errorElement) {
-                            const errorStyle = window.getComputedStyle(errorElement);
-                            if (errorStyle.display !== 'none') {
-                                failedImages++;
-                                totalImages++; // 失败的也算入总数
-                                debugInfo.push(`图片${i+1}(p=${pValue}): 加载失败(.mh_loaderr显示)`);
-                                continue;
-                            }
-                        }
-
-                        // 检查img元素
-                        if (img) {
-                            totalImages++;
-                            const srcValue = img.src || '';
-                            allSrc.push(srcValue);
-
-                            debugInfo.push(`图片${i+1}(p=${pValue}): src="${srcValue.substring(0, 50)}..." complete=${img.complete}`);
-
-                            if (srcValue) {
-                                if (srcValue.startsWith('blob:') || srcValue.startsWith('http')) {
-                                    blobImages++; // 现在包括blob和http图片
-                                    blobSrc.push(srcValue);
-                                } else if (srcValue.includes('data:') || !img.complete) {
-                                    // 只有data:或未完成的图片才算加载中
-                                    debugInfo[debugInfo.length - 1] += ' (数据加载中)';
-                                } else {
-                                    // 其他类型的图片src
-                                    debugInfo[debugInfo.length - 1] += ' (其他类型)';
-                                }
-                            } else {
-                                // 无src不算加载中，可能是正常状态
-                                debugInfo[debugInfo.length - 1] += ' (无src-正常)';
-                            }
-                        } else {
-                            // 如果没有img元素，但有.mh_comicpic容器，可能是特殊结构
-                            totalImages++;
-                            debugInfo.push(`图片${i+1}(p=${pValue}): 特殊结构，无img元素`);
-                            // 无img元素不算加载中
-                        }
-                    }
-
-                    return {
-                        totalImages,
-                        blobImages,
-                        failedImages,
-                        loadingImages,
-                        allSrc,
-                        blobSrc,
-                        debugInfo: debugInfo.slice(0, 10), // 只返回前10个调试信息
-                        loadingRate: totalImages > 0 ? (blobImages / totalImages * 100) : 0
-                    };
-                });
-
-                // 输出详细调试信息
-                console.log(`🔍 [浏览器 ${currentBrowser.id}] 图片检测详情:`);
-                console.log(`   总图片: ${blobResult.totalImages}`);
-                console.log(`   可下载图片: ${blobResult.blobImages}`);
-                console.log(`   失败图片: ${blobResult.failedImages}`);
-                console.log(`   加载中: ${blobResult.loadingImages} (仅统计.mh_loading显示)`);
-                console.log(`   所有src数量: ${blobResult.allSrc.length}`);
-                console.log(`   可下载src数量: ${blobResult.blobSrc.length}`);
-
-                if (blobResult.debugInfo.length > 0) {
-                    console.log(`📋 前10张图片详情:`);
-                    blobResult.debugInfo.forEach(info => console.log(`     ${info}`));
-                }
-
-                if (blobResult.blobSrc.length > 0) {
-                    console.log(`🔗 blob URLs示例:`);
-                    blobResult.blobSrc.slice(0, 3).forEach((src, i) => {
-                        console.log(`     ${i+1}. ${src.substring(0, 80)}...`);
-                    });
-                }
-
-                console.log(`📊 [浏览器 ${currentBrowser.id}] 图片加载进度: ${blobResult.blobImages}/${blobResult.totalImages} (${blobResult.loadingRate.toFixed(1)}%) [.mh_loading显示:${blobResult.loadingImages}, 失败:${blobResult.failedImages}]`);
-
-                // 如果有加载失败的图片，立即触发重试
-                if (blobResult.failedImages > 0) {
-                    console.log(`⚠️ 检测到 ${blobResult.failedImages} 张图片加载失败（.mh_loaderr显示）`);
-                    hasFailedImages = true;
-                    break; // 跳出当前等待循环，进入重试
-                }
-
-                // 如果有太多图片还在加载中（只考虑.mh_loading显示），也可能需要刷新
-                if (blobResult.loadingImages > blobResult.totalImages * 0.3) { // 超过30%的图片还在加载
-                    console.log(`⚠️ 检测到 ${blobResult.loadingImages} 张图片还在加载中（.mh_loading显示），可能需要刷新`);
-                    // 等待更长时间，如果持续太久则触发重试
-                    if (Date.now() - startTime > maxWaitTime * 0.7) { // 超过70%的等待时间
-                        console.log(`⚠️ 等待时间过长，触发刷新重试`);
-                        hasFailedImages = true;
-                        break;
-                    }
-                }
-
-                // 检查blob数量是否稳定
-                if (blobResult.blobImages === lastBlobCount) {
-                    stableCount++;
-                } else {
-                    stableCount = 0;
-                    lastBlobCount = blobResult.blobImages;
-                }
-
-                // 如果所有图片都加载完成，或者数量稳定且加载率较高
-                if (blobResult.loadingRate >= 95 && stableCount >= stableThreshold) {
-                    console.log(`✅ 图片加载完成: ${blobResult.blobImages}张 (blob+http)`);
-                    return {
-                        success: true,
-                        imageCount: blobResult.blobImages,
-                        totalImages: blobResult.totalImages,
-                        loadingRate: blobResult.loadingRate
-                    };
-                }
-
-                // 如果没有正在加载的图片，且有可下载图片，也认为完成
-                if (blobResult.loadingImages === 0 && blobResult.blobImages > 0 && stableCount >= stableThreshold) {
-                    console.log(`✅ 所有图片加载完成: ${blobResult.blobImages}张 (无正在加载的图片)`);
-                    return {
-                        success: true,
-                        imageCount: blobResult.blobImages,
-                        totalImages: blobResult.totalImages,
-                        loadingRate: blobResult.loadingRate
-                    };
-                }
-
-                // 等待一段时间后重新检查
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-
-            // 如果没有失败图片但超时了，也可以尝试重试
-            if (!hasFailedImages) {
-                console.log(`⚠️ 等待blob加载超时，但无失败图片`);
-                if (retry === maxRetries) {
-                    // 最后一次重试也超时，返回当前状态
-                    const finalResult = await currentBrowser.page.evaluate(() => {
                         const comicPics = document.querySelectorAll('.mh_comicpic');
                         let totalImages = 0;
                         let blobImages = 0;
+                        let failedImages = 0;
+                        let loadingImages = 0; // 只统计.mh_loading显示的图片
+                        let allSrc = []; // 收集所有图片的src
+                        let blobSrc = []; // 收集blob图片的src
+                        let debugInfo = []; // 调试信息
 
-                        for (const pic of comicPics) {
+                        for (let i = 0; i < comicPics.length; i++) {
+                            const pic = comicPics[i];
                             const img = pic.querySelector('img');
                             const loadingElement = pic.querySelector('.mh_loading');
                             const errorElement = pic.querySelector('.mh_loaderr');
+                            const pValue = pic.getAttribute('p');
 
-                            // 跳过正在加载或失败的图片
+                            // 检查是否有加载中元素显示 - 这是唯一的加载中判断标准
                             if (loadingElement) {
                                 const loadingStyle = window.getComputedStyle(loadingElement);
-                                if (loadingStyle.display !== 'none') continue;
+                                if (loadingStyle.display !== 'none') {
+                                    loadingImages++;
+                                    totalImages++; // 加载中的也算入总数
+                                    debugInfo.push(`图片${i + 1}(p=${pValue}): 正在加载中(.mh_loading显示)`);
+                                    continue;
+                                }
                             }
 
+                            // 检查是否有错误元素显示
                             if (errorElement) {
                                 const errorStyle = window.getComputedStyle(errorElement);
-                                if (errorStyle.display !== 'none') continue;
+                                if (errorStyle.display !== 'none') {
+                                    failedImages++;
+                                    totalImages++; // 失败的也算入总数
+                                    debugInfo.push(`图片${i + 1}(p=${pValue}): 加载失败(.mh_loaderr显示)`);
+                                    continue;
+                                }
                             }
 
-                            totalImages++;
-                            if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http'))) {
-                                blobImages++;
+                            // 检查img元素
+                            if (img) {
+                                totalImages++;
+                                const srcValue = img.src || '';
+                                allSrc.push(srcValue);
+
+                                debugInfo.push(`图片${i + 1}(p=${pValue}): src="${srcValue.substring(0, 50)}..." complete=${img.complete}`);
+
+                                if (srcValue) {
+                                    if (srcValue.startsWith('blob:') || srcValue.startsWith('http')) {
+                                        blobImages++; // 现在包括blob和http图片
+                                        blobSrc.push(srcValue);
+                                    } else if (srcValue.includes('data:') || !img.complete) {
+                                        // 只有data:或未完成的图片才算加载中
+                                        debugInfo[debugInfo.length - 1] += ' (数据加载中)';
+                                    } else {
+                                        // 其他类型的图片src
+                                        debugInfo[debugInfo.length - 1] += ' (其他类型)';
+                                    }
+                                } else {
+                                    // 无src不算加载中，可能是正常状态
+                                    debugInfo[debugInfo.length - 1] += ' (无src-正常)';
+                                }
+                            } else {
+                                // 如果没有img元素，但有.mh_comicpic容器，可能是特殊结构
+                                totalImages++;
+                                debugInfo.push(`图片${i + 1}(p=${pValue}): 特殊结构，无img元素`);
+                                // 无img元素不算加载中
                             }
                         }
 
-                        return { totalImages, blobImages };
+                        return {
+                            totalImages,
+                            blobImages,
+                            failedImages,
+                            loadingImages,
+                            allSrc,
+                            blobSrc,
+                            debugInfo: debugInfo.slice(0, 10), // 只返回前10个调试信息
+                            loadingRate: totalImages > 0 ? (blobImages / totalImages * 100) : 0
+                        };
                     });
 
-                    if (finalResult.blobImages > 0) {
-                        console.log(`⚠️ 超时但有部分图片加载成功，继续下载: ${finalResult.blobImages}张`);
+                    // 输出详细调试信息
+                    console.log(`🔍 [浏览器 ${currentBrowser.id}] 图片检测详情:`);
+                    console.log(`   总图片: ${blobResult.totalImages}`);
+                    console.log(`   可下载图片: ${blobResult.blobImages}`);
+                    console.log(`   失败图片: ${blobResult.failedImages}`);
+                    console.log(`   加载中: ${blobResult.loadingImages} (仅统计.mh_loading显示)`);
+                    console.log(`   所有src数量: ${blobResult.allSrc.length}`);
+                    console.log(`   可下载src数量: ${blobResult.blobSrc.length}`);
+
+                    if (blobResult.debugInfo.length > 0) {
+                        console.log(`📋 前10张图片详情:`);
+                        blobResult.debugInfo.forEach(info => console.log(`     ${info}`));
+                    }
+
+                    if (blobResult.blobSrc.length > 0) {
+                        console.log(`🔗 blob URLs示例:`);
+                        blobResult.blobSrc.slice(0, 3).forEach((src, i) => {
+                            console.log(`     ${i + 1}. ${src.substring(0, 80)}...`);
+                        });
+                    }
+
+                    console.log(`📊 [浏览器 ${currentBrowser.id}] 图片加载进度: ${blobResult.blobImages}/${blobResult.totalImages} (${blobResult.loadingRate.toFixed(1)}%) [.mh_loading显示:${blobResult.loadingImages}, 失败:${blobResult.failedImages}]`);
+
+                    // 如果有加载失败的图片，立即触发重试
+                    if (blobResult.failedImages > 0) {
+                        console.log(`⚠️ 检测到 ${blobResult.failedImages} 张图片加载失败（.mh_loaderr显示）`);
+                        hasFailedImages = true;
+                        break; // 跳出当前等待循环，进入重试
+                    }
+
+                    // 如果有太多图片还在加载中（只考虑.mh_loading显示），也可能需要刷新
+                    if (blobResult.loadingImages > blobResult.totalImages * 0.3) { // 超过30%的图片还在加载
+                        console.log(`⚠️ 检测到 ${blobResult.loadingImages} 张图片还在加载中（.mh_loading显示），可能需要刷新`);
+                        // 等待更长时间，如果持续太久则触发重试
+                        if (Date.now() - startTime > maxWaitTime * 0.7) { // 超过70%的等待时间
+                            console.log(`⚠️ 等待时间过长，触发刷新重试`);
+                            hasFailedImages = true;
+                            break;
+                        }
+                    }
+
+                    // 检查blob数量是否稳定
+                    if (blobResult.blobImages === lastBlobCount) {
+                        stableCount++;
+                    } else {
+                        stableCount = 0;
+                        lastBlobCount = blobResult.blobImages;
+                    }
+
+                    // 如果所有图片都加载完成，或者数量稳定且加载率较高
+                    if (blobResult.loadingRate >= 95 && stableCount >= stableThreshold) {
+                        console.log(`✅ 图片加载完成: ${blobResult.blobImages}张 (blob+http)`);
                         return {
                             success: true,
-                            imageCount: finalResult.blobImages,
-                            totalImages: finalResult.totalImages,
-                            loadingRate: (finalResult.blobImages / finalResult.totalImages * 100)
+                            imageCount: blobResult.blobImages,
+                            totalImages: blobResult.totalImages,
+                            loadingRate: blobResult.loadingRate
                         };
+                    }
+
+                    // 如果没有正在加载的图片，且有可下载图片，也认为完成
+                    if (blobResult.loadingImages === 0 && blobResult.blobImages > 0 && stableCount >= stableThreshold) {
+                        console.log(`✅ 所有图片加载完成: ${blobResult.blobImages}张 (无正在加载的图片)`);
+                        return {
+                            success: true,
+                            imageCount: blobResult.blobImages,
+                            totalImages: blobResult.totalImages,
+                            loadingRate: blobResult.loadingRate
+                        };
+                    }
+
+                    // 等待一段时间后重新检查
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+
+                // 如果没有失败图片但超时了，也可以尝试重试
+                if (!hasFailedImages) {
+                    console.log(`⚠️ 等待blob加载超时，但无失败图片`);
+                    if (retry === maxRetries) {
+                        // 最后一次重试也超时，返回当前状态
+                        const finalResult = await currentBrowser.page.evaluate(() => {
+                            const comicPics = document.querySelectorAll('.mh_comicpic');
+                            let totalImages = 0;
+                            let blobImages = 0;
+
+                            for (const pic of comicPics) {
+                                const img = pic.querySelector('img');
+                                const loadingElement = pic.querySelector('.mh_loading');
+                                const errorElement = pic.querySelector('.mh_loaderr');
+
+                                // 跳过正在加载或失败的图片
+                                if (loadingElement) {
+                                    const loadingStyle = window.getComputedStyle(loadingElement);
+                                    if (loadingStyle.display !== 'none') continue;
+                                }
+
+                                if (errorElement) {
+                                    const errorStyle = window.getComputedStyle(errorElement);
+                                    if (errorStyle.display !== 'none') continue;
+                                }
+
+                                totalImages++;
+                                if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http'))) {
+                                    blobImages++;
+                                }
+                            }
+
+                            return { totalImages, blobImages };
+                        });
+
+                        if (finalResult.blobImages > 0) {
+                            console.log(`⚠️ 超时但有部分图片加载成功，继续下载: ${finalResult.blobImages}张`);
+                            return {
+                                success: true,
+                                imageCount: finalResult.blobImages,
+                                totalImages: finalResult.totalImages,
+                                loadingRate: (finalResult.blobImages / finalResult.totalImages * 100)
+                            };
+                        }
                     }
                 }
             }
-        }
 
             console.log(`❌ [浏览器 ${currentBrowser.id}] 所有重试都失败了`);
             return { success: false, imageCount: 0 };
@@ -1890,76 +1890,220 @@ class MangaContentDownloader {
     }
 
     /**
-     * 等待图片完全加载
+     * 等待图片完全加载 - 新版本：智能等待有高度的图片元素加载
      */
-    async waitForImagesFullyLoaded(browserInstance = null, targetImageCount = null) {
+    async waitForImagesFullyLoaded(browserInstance = null) {
         const currentBrowser = browserInstance || await this.acquireBrowserInstance();
         console.log(`⏳ [浏览器 ${currentBrowser.id}] 等待图片完全加载...`);
 
         try {
-            const maxWaitTime = 30000; // 最大等待30秒
-            const startTime = Date.now();
-            let lastLoadedCount = 0;
-            let stableCount = 0;
-            const stableThreshold = 3;
+            const maxRetries = 3; // 最多重试3次
+            let retryCount = 0;
 
-            while (Date.now() - startTime < maxWaitTime) {
-                // 检查图片加载状态
-                const loadStatus = await currentBrowser.page.evaluate(() => {
+            while (retryCount <= maxRetries) {
+                if (retryCount > 0) {
+                    console.log(`🔄 [浏览器 ${currentBrowser.id}] 第 ${retryCount} 次重试，刷新页面...`);
+                    await currentBrowser.page.reload({ waitUntil: 'domcontentloaded' });
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // 等待页面稳定
+                }
+
+                // 获取页面状态：统计有高度的 mh_comicpic 元素数量
+                const pageStatus = await currentBrowser.page.evaluate(() => {
                     const comicPics = document.querySelectorAll('.mh_comicpic');
-                    let totalImages = 0;
+                    let totalWithHeight = 0;
                     let loadedImages = 0;
-                    let completeImages = 0;
+                    let elementsInfo = [];
 
-                    for (const pic of comicPics) {
-                        const img = pic.querySelector('img');
-                        if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'))) {
-                            totalImages++;
-                            if (img.complete) {
-                                completeImages++;
-                                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                                    loadedImages++;
-                                }
+                    for (let i = 0; i < comicPics.length; i++) {
+                        const pic = comicPics[i];
+                        const rect = pic.getBoundingClientRect();
+                        const hasHeight = rect.height > 0;
+
+                        if (hasHeight) {
+                            totalWithHeight++;
+                            const img = pic.querySelector('img');
+                            const hasSrc = img && img.src && !img.src.includes('placeholder') &&
+                                (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'));
+
+                            if (hasSrc) {
+                                loadedImages++;
                             }
+
+                            elementsInfo.push({
+                                index: i,
+                                hasHeight: true,
+                                hasSrc: hasSrc,
+                                src: img ? img.src.substring(0, 50) : 'no-img',
+                                rect: { top: rect.top, height: rect.height }
+                            });
                         }
                     }
 
-                    return { totalImages, loadedImages, completeImages };
+                    return {
+                        totalWithHeight,
+                        loadedImages,
+                        elementsInfo: elementsInfo.slice(0, 10) // 只返回前10个用于调试
+                    };
                 });
 
-                console.log(`📊 [浏览器 ${currentBrowser.id}] 图片加载状态: ${loadStatus.loadedImages}/${loadStatus.totalImages} 完全加载, ${loadStatus.completeImages}/${loadStatus.totalImages} complete`);
+                console.log(`📊 [浏览器 ${currentBrowser.id}] 页面状态:`);
+                console.log(`   .mh_comicpic 元素数量: ${pageStatus.totalWithHeight}`);
+                console.log(`   已加载图片数量: ${pageStatus.loadedImages}`);
 
-                // 检查是否达到目标数量且完全加载
-                if (targetImageCount && loadStatus.loadedImages >= targetImageCount) {
-                    console.log(`✅ [浏览器 ${currentBrowser.id}] 已达到目标数量且完全加载: ${loadStatus.loadedImages}/${targetImageCount}`);
-                    break;
+                // 如果已经全部加载完成，直接返回
+                if (pageStatus.loadedImages >= pageStatus.totalWithHeight && pageStatus.totalWithHeight > 0) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 所有图片已加载完成: ${pageStatus.loadedImages}/${pageStatus.totalWithHeight}`);
+                    return;
                 }
 
-                // 检查加载数量是否稳定
-                if (loadStatus.loadedImages === lastLoadedCount) {
-                    stableCount++;
+                // 逐个处理未加载的图片元素
+                const success = await this.waitForIndividualImages(currentBrowser, pageStatus.totalWithHeight);
+
+                if (success) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片加载完成`);
+                    return;
                 } else {
-                    stableCount = 0;
-                    lastLoadedCount = loadStatus.loadedImages;
+                    retryCount++;
+                    if (retryCount <= maxRetries) {
+                        console.log(`❌ [浏览器 ${currentBrowser.id}] 图片加载失败，准备重试 ${retryCount}/${maxRetries}`);
+                    }
                 }
-
-                // 如果加载数量稳定且有图片，认为完成
-                if (stableCount >= stableThreshold && loadStatus.loadedImages > 0) {
-                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片加载稳定完成: ${loadStatus.loadedImages}张`);
-                    break;
-                }
-
-                // 等待一段时间后重新检查
-                await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
-            console.log(`✅ [浏览器 ${currentBrowser.id}] 图片加载等待完成`);
+            console.log(`⚠️ [浏览器 ${currentBrowser.id}] 达到最大重试次数，图片加载可能不完整`);
         } finally {
             if (!browserInstance && currentBrowser) {
                 this.releaseBrowserInstance(currentBrowser);
                 console.log(`🔓 [waitForImagesFullyLoaded] 释放临时获取的浏览器实例: ${currentBrowser.id}`);
             }
         }
+    }
+
+    /**
+     * 逐个等待图片加载 - 滚动到未加载图片位置并等待
+     */
+    async waitForIndividualImages(browserInstance, totalExpected) {
+        const currentBrowser = browserInstance;
+        console.log(`🎯 [浏览器 ${currentBrowser.id}] 开始逐个等待图片加载，预期总数: ${totalExpected}`);
+
+        let consecutiveFailures = 0;
+        const maxConsecutiveFailures = 3;
+
+        while (consecutiveFailures < maxConsecutiveFailures) {
+            // 查找下一个需要加载的图片
+            const nextUnloadedImage = await currentBrowser.page.evaluate(() => {
+                const comicPics = document.querySelectorAll('.mh_comicpic');
+
+                for (let i = 0; i < comicPics.length; i++) {
+                    const pic = comicPics[i];
+                    const rect = pic.getBoundingClientRect();
+
+                    // 只处理有高度的元素
+                    if (rect.height > 0) {
+                        const img = pic.querySelector('img');
+                        const hasSrc = img && img.src && !img.src.includes('placeholder') &&
+                            (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'));
+
+                        if (!hasSrc) {
+                            return {
+                                index: i,
+                                top: rect.top + window.scrollY,
+                                height: rect.height,
+                                hasImg: !!img,
+                                currentSrc: img ? img.src : 'no-img'
+                            };
+                        }
+                    }
+                }
+                return null;
+            });
+
+            if (!nextUnloadedImage) {
+                // 没有找到未加载的图片，检查总体完成情况
+                const finalStatus = await currentBrowser.page.evaluate(() => {
+                    const comicPics = document.querySelectorAll('.mh_comicpic');
+                    let totalWithHeight = 0;
+                    let loadedImages = 0;
+
+                    for (const pic of comicPics) {
+                        const rect = pic.getBoundingClientRect();
+                        if (rect.height > 0) {
+                            totalWithHeight++;
+                            const img = pic.querySelector('img');
+                            const hasSrc = img && img.src && !img.src.includes('placeholder') &&
+                                (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'));
+                            if (hasSrc) {
+                                loadedImages++;
+                            }
+                        }
+                    }
+
+                    return { totalWithHeight, loadedImages };
+                });
+
+                console.log(`✅ [浏览器 ${currentBrowser.id}] 所有图片处理完成: ${finalStatus.loadedImages}/${finalStatus.totalWithHeight}`);
+                return finalStatus.loadedImages >= finalStatus.totalWithHeight;
+            }
+
+            console.log(`🎯 [浏览器 ${currentBrowser.id}] 发现未加载图片 ${nextUnloadedImage.index + 1}，滚动到位置: ${nextUnloadedImage.top}`);
+
+            // 滚动到该图片位置
+            await currentBrowser.page.evaluate((top) => {
+                window.scrollTo({
+                    top: top - window.innerHeight / 2, // 滚动到屏幕中央
+                    behavior: 'smooth'
+                });
+            }, nextUnloadedImage.top);
+
+            // 等待滚动完成
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // 等待图片加载，每3秒检查一次，最多等待3次（9秒）
+            let imageLoaded = false;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                console.log(`⏳ [浏览器 ${currentBrowser.id}] 等待图片 ${nextUnloadedImage.index + 1} 加载... (${attempt}/3)`);
+
+                await new Promise(resolve => setTimeout(resolve, 3000)); // 等待3秒
+
+                // 检查图片是否已加载
+                const loadResult = await currentBrowser.page.evaluate((index) => {
+                    const comicPics = document.querySelectorAll('.mh_comicpic');
+                    if (index < comicPics.length) {
+                        const pic = comicPics[index];
+                        const img = pic.querySelector('img');
+                        const hasSrc = img && img.src && !img.src.includes('placeholder') &&
+                            (img.src.startsWith('blob:') || img.src.startsWith('http') || img.src.startsWith('data:'));
+
+                        return {
+                            loaded: hasSrc,
+                            src: img ? img.src.substring(0, 50) : 'no-img'
+                        };
+                    }
+                    return { loaded: false, src: 'not-found' };
+                }, nextUnloadedImage.index);
+
+                if (loadResult.loaded) {
+                    console.log(`✅ [浏览器 ${currentBrowser.id}] 图片 ${nextUnloadedImage.index + 1} 加载成功`);
+                    imageLoaded = true;
+                    consecutiveFailures = 0; // 重置连续失败计数
+                    break;
+                } else {
+                    console.log(`⏳ [浏览器 ${currentBrowser.id}] 图片 ${nextUnloadedImage.index + 1} 尚未加载，继续等待...`);
+                }
+            }
+
+            if (!imageLoaded) {
+                consecutiveFailures++;
+                console.log(`❌ [浏览器 ${currentBrowser.id}] 图片 ${nextUnloadedImage.index + 1} 加载失败，连续失败次数: ${consecutiveFailures}/${maxConsecutiveFailures}`);
+
+                if (consecutiveFailures >= maxConsecutiveFailures) {
+                    console.log(`❌ [浏览器 ${currentBrowser.id}] 连续失败次数过多，停止等待`);
+                    return false;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1974,19 +2118,19 @@ class MangaContentDownloader {
             const interceptedImages = await currentBrowser.page.evaluate(() => {
                 const images = window.__interceptedImages || [];
                 return images.filter(img => img.dataFetched && img.imageData && img.imageData.success)
-                           .sort((a, b) => a.order - b.order);
+                    .sort((a, b) => a.order - b.order);
             });
 
             console.log(`🔍 [浏览器 ${currentBrowser.id}] 找到 ${interceptedImages.length} 张已获取数据的图片`);
 
             // 显示从浏览器端传递过来的日志信息
             if (interceptedImages.length > 0) {
-                console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
-                for (const imageInfo of interceptedImages) {
-                    if (imageInfo.logMessage) {
-                        console.log(`   ${imageInfo.logMessage}`);
-                    }
-                }
+                // console.log(`📝 [浏览器 ${currentBrowser.id}] 浏览器端日志:`);
+                // for (const imageInfo of interceptedImages) {
+                //     if (imageInfo.logMessage) {
+                //         console.log(`   ${imageInfo.logMessage}`);
+                //     }
+                // }
             }
 
             if (interceptedImages.length === 0) {
@@ -2034,7 +2178,7 @@ class MangaContentDownloader {
                     try {
                         if (imageInfo.imageData && imageInfo.imageData.success) {
                             buffer = Buffer.from(imageInfo.imageData.data, 'base64');
-                            console.log(`📦 使用已获取的数据: ${fileName} (${(buffer.length/1024).toFixed(1)}KB)`);
+                            console.log(`📦 使用已获取的数据: ${fileName} (${(buffer.length / 1024).toFixed(1)}KB)`);
                         } else {
                             console.error(`❌ 图片数据无效: ${fileName}`);
                             failedCount++;
@@ -2097,120 +2241,120 @@ class MangaContentDownloader {
         try {
             // 获取所有可下载图片信息 - 支持blob和http，排除加载中和失败的
             const downloadableImages = await currentBrowser.page.evaluate(() => {
-            const comicPics = document.querySelectorAll('.mh_comicpic');
-            const images = [];
+                const comicPics = document.querySelectorAll('.mh_comicpic');
+                const images = [];
 
-            for (let i = 0; i < comicPics.length; i++) {
-                const pic = comicPics[i];
-                const img = pic.querySelector('img');
-                const loadingElement = pic.querySelector('.mh_loading');
-                const errorElement = pic.querySelector('.mh_loaderr');
-                const pValue = pic.getAttribute('p');
+                for (let i = 0; i < comicPics.length; i++) {
+                    const pic = comicPics[i];
+                    const img = pic.querySelector('img');
+                    const loadingElement = pic.querySelector('.mh_loading');
+                    const errorElement = pic.querySelector('.mh_loaderr');
+                    const pValue = pic.getAttribute('p');
 
-                // 跳过正在加载的图片
-                if (loadingElement) {
-                    const loadingStyle = window.getComputedStyle(loadingElement);
-                    if (loadingStyle.display !== 'none') {
-                        console.log(`跳过加载中的图片: p=${pValue}`);
-                        continue;
+                    // 跳过正在加载的图片
+                    if (loadingElement) {
+                        const loadingStyle = window.getComputedStyle(loadingElement);
+                        if (loadingStyle.display !== 'none') {
+                            console.log(`跳过加载中的图片: p=${pValue}`);
+                            continue;
+                        }
+                    }
+
+                    // 跳过加载失败的图片
+                    if (errorElement) {
+                        const errorStyle = window.getComputedStyle(errorElement);
+                        if (errorStyle.display !== 'none') {
+                            console.log(`跳过加载失败的图片: p=${pValue}`);
+                            continue;
+                        }
+                    }
+
+                    if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http'))) {
+                        // 优先使用p属性作为顺序，如果没有则使用索引+1
+                        const order = pValue ? parseInt(pValue) : (i + 1);
+
+                        if (order > 0) {
+                            images.push({
+                                imageUrl: img.src,
+                                order: order,
+                                element: pic,
+                                isBlob: img.src.startsWith('blob:'),
+                                isHttp: img.src.startsWith('http')
+                            });
+                        }
                     }
                 }
 
-                // 跳过加载失败的图片
-                if (errorElement) {
-                    const errorStyle = window.getComputedStyle(errorElement);
-                    if (errorStyle.display !== 'none') {
-                        console.log(`跳过加载失败的图片: p=${pValue}`);
-                        continue;
-                    }
-                }
+                return images.sort((a, b) => a.order - b.order);
+            });
 
-                if (img && img.src && (img.src.startsWith('blob:') || img.src.startsWith('http'))) {
-                    // 优先使用p属性作为顺序，如果没有则使用索引+1
-                    const order = pValue ? parseInt(pValue) : (i + 1);
+            console.log(`🔍 找到 ${downloadableImages.length} 张可下载图片`);
 
-                    if (order > 0) {
-                        images.push({
-                            imageUrl: img.src,
-                            order: order,
-                            element: pic,
-                            isBlob: img.src.startsWith('blob:'),
-                            isHttp: img.src.startsWith('http')
-                        });
-                    }
-                }
+            if (downloadableImages.length === 0) {
+                console.log(`⚠️ 未找到任何可下载图片`);
+                return 0;
             }
 
-            return images.sort((a, b) => a.order - b.order);
-        });
+            // 统计图片类型
+            const blobCount = downloadableImages.filter(img => img.isBlob).length;
+            const httpCount = downloadableImages.filter(img => img.isHttp).length;
+            console.log(`📊 图片类型统计: blob=${blobCount}, http=${httpCount}`);
 
-        console.log(`🔍 找到 ${downloadableImages.length} 张可下载图片`);
+            // 下载图片
+            let downloadedCount = 0;
+            let skippedCount = 0;
+            let failedCount = 0;
+            let smallImageCount = 0; // 小图片计数
 
-        if (downloadableImages.length === 0) {
-            console.log(`⚠️ 未找到任何可下载图片`);
-            return 0;
-        }
+            for (const imageInfo of downloadableImages) {
+                try {
+                    // 生成文件名，统一使用 PNG 格式
+                    const originalExtension = this.getImageExtension();
+                    const fileName = `${imageInfo.order}.${originalExtension}`;
+                    const filePath = path.join(chapterDir, fileName);
 
-        // 统计图片类型
-        const blobCount = downloadableImages.filter(img => img.isBlob).length;
-        const httpCount = downloadableImages.filter(img => img.isHttp).length;
-        console.log(`📊 图片类型统计: blob=${blobCount}, http=${httpCount}`);
+                    // 检查文件是否已存在且大小合格
+                    if (await fs.pathExists(filePath)) {
+                        if (await this.isImageSizeValid(filePath, 5)) {
+                            console.log(`⏭️ 文件已存在且合格，跳过: ${fileName}`);
+                            skippedCount++;
+                            continue;
+                        } else {
+                            // 文件存在但太小，删除后重新下载
+                            await fs.remove(filePath);
+                            console.log(`🗑️ 删除小图片文件，准备重新下载: ${fileName}`);
+                        }
+                    }
 
-        // 下载图片
-        let downloadedCount = 0;
-        let skippedCount = 0;
-        let failedCount = 0;
-        let smallImageCount = 0; // 小图片计数
+                    const imageType = imageInfo.isBlob ? 'blob' : 'http';
+                    // console.log(`📸 下载${imageType}图片: ${fileName}`);
 
-        for (const imageInfo of downloadableImages) {
-            try {
-                // 生成文件名，统一使用 PNG 格式
-                const originalExtension = this.getImageExtension();
-                const fileName = `${imageInfo.order}.${originalExtension}`;
-                const filePath = path.join(chapterDir, fileName);
+                    // 使用浏览器内HTTP下载
+                    const buffer = await this.downloadImageInBrowser(imageInfo, currentBrowser);
 
-                // 检查文件是否已存在且大小合格
-                if (await fs.pathExists(filePath)) {
-                    if (await this.isImageSizeValid(filePath, 5)) {
-                        console.log(`⏭️ 文件已存在且合格，跳过: ${fileName}`);
-                        skippedCount++;
-                        continue;
+                    if (buffer && buffer.length > 0) {
+                        const sizeKB = buffer.length / 1024;
+
+                        // 检查下载的图片大小
+                        if (sizeKB < 5) {
+                            console.log(`⚠️ 图片太小，跳过保存: ${fileName} (${sizeKB.toFixed(1)} KB < 5KB)`);
+                            smallImageCount++;
+                            continue;
+                        }
+
+                        await fs.writeFile(filePath, buffer);
+                        console.log(`💾 保存成功: ${fileName} (${sizeKB.toFixed(1)} KB, ${imageType})`);
+                        downloadedCount++;
                     } else {
-                        // 文件存在但太小，删除后重新下载
-                        await fs.remove(filePath);
-                        console.log(`🗑️ 删除小图片文件，准备重新下载: ${fileName}`);
-                    }
-                }
-
-                const imageType = imageInfo.isBlob ? 'blob' : 'http';
-                console.log(`📸 下载${imageType}图片: ${fileName}`);
-
-                // 使用浏览器内HTTP下载
-                const buffer = await this.downloadImageInBrowser(imageInfo, currentBrowser);
-
-                if (buffer && buffer.length > 0) {
-                    const sizeKB = buffer.length / 1024;
-
-                    // 检查下载的图片大小
-                    if (sizeKB < 5) {
-                        console.log(`⚠️ 图片太小，跳过保存: ${fileName} (${sizeKB.toFixed(1)} KB < 5KB)`);
-                        smallImageCount++;
-                        continue;
+                        console.error(`❌ 下载失败，数据为空: ${fileName}`);
+                        failedCount++;
                     }
 
-                    await fs.writeFile(filePath, buffer);
-                    console.log(`💾 保存成功: ${fileName} (${sizeKB.toFixed(1)} KB, ${imageType})`);
-                    downloadedCount++;
-                } else {
-                    console.error(`❌ 下载失败，数据为空: ${fileName}`);
+                } catch (error) {
+                    console.error(`❌ 下载图片失败 (order=${imageInfo.order}): ${error.message}`);
                     failedCount++;
                 }
-
-            } catch (error) {
-                console.error(`❌ 下载图片失败 (order=${imageInfo.order}): ${error.message}`);
-                failedCount++;
             }
-        }
 
             console.log(`✅ [浏览器 ${currentBrowser.id}] 图片下载完成统计:`);
             console.log(`   - 成功下载: ${downloadedCount} 张`);
@@ -2604,7 +2748,7 @@ class MangaContentDownloader {
             if (imageData.success) {
                 // 将base64转换回buffer
                 const buffer = Buffer.from(imageData.data, 'base64');
-                console.log(`✅ 浏览器内下载成功: order=${order}, size=${(buffer.length/1024).toFixed(1)}KB, type=${imageData.contentType}`);
+                console.log(`✅ 浏览器内下载成功: order=${order}, size=${(buffer.length / 1024).toFixed(1)}KB, type=${imageData.contentType}`);
                 return buffer;
             } else {
                 console.error(`❌ 浏览器内下载失败: order=${order}, error=${imageData.error}`);
