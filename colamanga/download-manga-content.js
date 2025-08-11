@@ -20,8 +20,8 @@ class MangaContentDownloader {
         // 并行配置
         this.parallelConfig = {
             enabled: true, // 默认启用并行，除非明确设置为false
-            maxConcurrent: 2, // 最大并发漫画数
-            retryAttempts: 2,
+            maxConcurrent: 5, // 最大并发漫画数
+            retryAttempts: 6,
             retryDelay: options.retryDelay || 1000
         };
 
@@ -1087,13 +1087,55 @@ class MangaContentDownloader {
     }
 
     /**
-     * 检查章节是否已完成下载 - 优化版本，支持基于总页数的精确检查
+     * 检查章节PDF是否存在
+     */
+    async isChapterPdfExists(mangaName, chapter) {
+        try {
+            // PDF目录位于漫画输出目录的同级目录 manga-pdf
+            const pdfDir = path.join(path.dirname(this.outputDir), 'manga-pdf', mangaName);
+
+            if (!(await fs.pathExists(pdfDir))) {
+                return false;
+            }
+
+            // 读取目录中的所有文件
+            const files = await fs.readdir(pdfDir);
+
+            // 查找以 "第x章" 开头的 PDF 文件
+            const chapterPattern = `第${chapter}章`;
+            for (const file of files) {
+                if (file.startsWith(chapterPattern) && file.endsWith('.pdf')) {
+                    console.log(`📄 找到PDF文件: ${path.join(pdfDir, file)}`);
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            console.log(`⚠️ 检查PDF文件失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * 检查章节是否已完成下载 - 优化版本，支持基于总页数的精确检查和PDF文件检查
      */
     async isChapterComplete(chapterDir, mangaId = null, chapter = null) {
         try {
             // 检查目录是否存在
             if (!(await fs.pathExists(chapterDir))) {
                 return false;
+            }
+
+            // 首先检查是否有对应的PDF文件存在，如果有PDF则认为章节已完成
+            if (mangaId && chapter) {
+                // 从章节目录路径中提取漫画名称
+                const mangaName = path.basename(path.dirname(chapterDir));
+                const pdfExists = await this.isChapterPdfExists(mangaName, chapter);
+                if (pdfExists) {
+                    console.log(`📄 [漫画${mangaId}-章节${chapter}] PDF文件已存在，章节已完成`);
+                    return true;
+                }
             }
 
             // 检查是否有图片文件，并过滤掉小于5KB的图片
@@ -1126,14 +1168,11 @@ class MangaContentDownloader {
                 const expectedTotalPages = this.getChapterTotalPages(mangaId, chapter);
 
                 if (expectedTotalPages !== null) {
-                    // 有精确的总页数数据，进行精确比较
-                    const isComplete = actualImageCount === expectedTotalPages;
+                    // 有精确的总页数数据，进行精确比较（图片数量大于等于预期数量即认为完成）
+                    const isComplete = actualImageCount >= expectedTotalPages;
                     console.log(`📊 章节完整性检查 [漫画${mangaId}-章节${chapter}]: 实际图片${actualImageCount}张, 预期${expectedTotalPages}张, ${isComplete ? '✅完整' : '❌不完整'}`);
 
                     if (isComplete) {
-                        return true;
-                    } else if (actualImageCount > expectedTotalPages) {
-                        console.log(`⚠️ 实际图片数量(${actualImageCount})超过预期(${expectedTotalPages})，可能有重复下载，仍认为完整`);
                         return true;
                     } else {
                         console.log(`🔄 实际图片数量(${actualImageCount})少于预期(${expectedTotalPages})，需要重新下载`);
@@ -2194,7 +2233,7 @@ class MangaContentDownloader {
                         const sizeKB = buffer.length / 1024;
 
                         // 检查下载的图片大小
-                        if (sizeKB < 5) {
+                        if (sizeKB < 0) {
                             console.log(`⚠️ 图片太小，跳过保存: ${fileName} (${sizeKB.toFixed(1)} KB < 5KB)`);
                             smallImageCount++;
                             continue;
@@ -2336,7 +2375,7 @@ class MangaContentDownloader {
                         const sizeKB = buffer.length / 1024;
 
                         // 检查下载的图片大小
-                        if (sizeKB < 5) {
+                        if (sizeKB < 0) {
                             console.log(`⚠️ 图片太小，跳过保存: ${fileName} (${sizeKB.toFixed(1)} KB < 5KB)`);
                             smallImageCount++;
                             continue;
@@ -2568,7 +2607,7 @@ class MangaContentDownloader {
     /**
      * 检查图片文件大小是否合格（大于等于5KB）
      */
-    async isImageSizeValid(filePath, minSizeKB = 5) {
+    async isImageSizeValid(filePath, minSizeKB = 0) {
         try {
             if (!(await fs.pathExists(filePath))) {
                 return false;
@@ -2585,7 +2624,7 @@ class MangaContentDownloader {
     /**
      * 清理章节目录中的小图片文件（小于5KB）
      */
-    async cleanupSmallImages(chapterDir, minSizeKB = 5) {
+    async cleanupSmallImages(chapterDir, minSizeKB = 0) {
         try {
             if (!(await fs.pathExists(chapterDir))) {
                 return { deletedCount: 0, totalChecked: 0 };
