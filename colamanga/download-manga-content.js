@@ -490,22 +490,48 @@ class MangaContentDownloader {
         const startTime = Date.now();
 
         while (Date.now() - startTime < timeoutMs) {
-            // 查找空闲实例
-            const availableInstance = this.availableInstances.find(instance => !instance.busy);
+            // 原子性地查找并标记实例为忙碌，避免竞态条件
+            let foundInstance = null;
+            
+            for (const instance of this.availableInstances) {
+                if (!instance.busy && !this.busyInstances.has(instance.id)) {
+                    // 立即标记为忙碌，避免其他工作器获取到同一个实例
+                    instance.busy = true;
+                    instance.lastUsed = Date.now();
+                    this.busyInstances.add(instance.id);
+                    foundInstance = instance;
+                    break; // 找到一个就立即跳出
+                }
+            }
 
-            if (availableInstance) {
-                availableInstance.busy = true;
-                availableInstance.lastUsed = Date.now();
-                this.busyInstances.add(availableInstance.id);
-                console.log(`� 获取浏览器实例: ${availableInstance.id}`);
-                return availableInstance;
+            if (foundInstance) {
+                console.log(`🔒 获取浏览器实例: ${foundInstance.id} (当前忙碌实例: ${Array.from(this.busyInstances).join(', ')})`);
+                return foundInstance;
             }
 
             // 等待一段时间后重试
             await new Promise(resolve => setTimeout(resolve, 200));
         }
 
-        throw new Error(`获取浏览器实例超时：所有 ${this.browserInstances.length} 个浏览器都在忙碌中`);
+        const busyList = Array.from(this.busyInstances).join(', ');
+        throw new Error(`获取浏览器实例超时：所有 ${this.browserInstances.length} 个浏览器都在忙碌中 [忙碌实例: ${busyList}]`);
+    }
+
+    /**
+     * 显示浏览器实例池状态（调试用）
+     */
+    logBrowserInstanceStatus() {
+        const totalInstances = this.browserInstances.length;
+        const busyCount = this.busyInstances.size;
+        const availableCount = totalInstances - busyCount;
+        
+        console.log(`📊 浏览器实例池状态: 总计${totalInstances}个, 忙碌${busyCount}个, 空闲${availableCount}个`);
+        console.log(`   忙碌实例: [${Array.from(this.busyInstances).join(', ') || '无'}]`);
+        
+        const availableIds = this.browserInstances
+            .filter(instance => !instance.busy)
+            .map(instance => instance.id);
+        console.log(`   空闲实例: [${availableIds.join(', ') || '无'}]`);
     }
 
     /**
@@ -516,7 +542,8 @@ class MangaContentDownloader {
             browserInstance.busy = false;
             browserInstance.lastUsed = Date.now();
             this.busyInstances.delete(browserInstance.id);
-            console.log(`🔓 释放浏览器实例: ${browserInstance.id}`);
+            const remainingBusy = Array.from(this.busyInstances).join(', ') || '无';
+            console.log(`🔓 释放浏览器实例: ${browserInstance.id} (剩余忙碌实例: ${remainingBusy})`);
         }
     }
 
@@ -674,6 +701,7 @@ class MangaContentDownloader {
 
                 try {
                     // 获取浏览器实例
+                    console.log(`🔍 [${currentIndex + 1}] [工作器 ${workerId}] 正在为漫画 "${manga.name}" 请求浏览器实例...`);
                     browserInstance = await this.acquireBrowserInstance();
                     console.log(`🔄 [${currentIndex + 1}] [工作器 ${workerId}] 为漫画 "${manga.name}" 分配浏览器实例 ${browserInstance.id}`);
 
@@ -728,6 +756,9 @@ class MangaContentDownloader {
         // 启动多个工作器并行处理
         const maxWorkers = Math.min(this.parallelConfig.maxConcurrent, mangaList.length);
         console.log(`⚡ 启动 ${maxWorkers} 个工作器并行处理...`);
+        
+        // 显示浏览器实例池状态
+        this.logBrowserInstanceStatus();
 
         const workers = [];
         for (let i = 0; i < maxWorkers; i++) {
@@ -944,7 +975,7 @@ class MangaContentDownloader {
 
             // 在重新下载前，先清理不合格的图片和标准化文件名
             console.log(`🧹 [浏览器 ${currentBrowser.id}] 清理章节目录...`);
-            await this.cleanupSmallImages(chapterDir, 5);
+            // await this.cleanupSmallImages(chapterDir, 5);
             await this.normalizeImageFileNames(chapterDir);
 
             // 核心下载流程：滚动页面 -> 等待图片加载 -> 下载图片
@@ -2197,8 +2228,8 @@ class MangaContentDownloader {
 
                     // 检查文件是否已存在且大小合格
                     if (await fs.pathExists(filePath)) {
-                        if (await this.isImageSizeValid(filePath, 5)) {
-                            console.log(`⏭️ 文件已存在且合格，跳过: ${fileName}`);
+                        if (await this.isImageSizeValid(filePath, 0)) {
+                            // console.log(`⏭️ 文件已存在且合格，跳过: ${fileName}`);
                             skippedCount++;
                             continue;
                         } else {
