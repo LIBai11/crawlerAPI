@@ -130,6 +130,37 @@ class MangaGapFiller {
     }
 
     /**
+     * 检查章节PDF是否存在
+     */
+    async isChapterPdfExists(mangaName, chapter) {
+        try {
+            // PDF目录位于漫画输出目录的同级目录 manga-pdf
+            const pdfDir = path.join(path.dirname(this.outputDir), 'manga-pdf', mangaName);
+            
+            if (!(await fs.pathExists(pdfDir))) {
+                return false;
+            }
+
+            // 读取目录中的所有文件
+            const files = await fs.readdir(pdfDir);
+            
+            // 查找以 "第x章" 开头的 PDF 文件
+            const chapterPattern = `第${chapter}章`;
+            for (const file of files) {
+                if (file.startsWith(chapterPattern) && file.endsWith('.pdf')) {
+                    console.log(`📄 找到PDF文件: ${path.join(pdfDir, file)}`);
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            console.log(`⚠️ 检查PDF文件失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
      * 统计目录中的有效图片数量
      */
     async countValidImages(chapterPath) {
@@ -246,6 +277,13 @@ class MangaGapFiller {
                     continue;
                 }
 
+                // 首先检查是否有PDF文件存在，如果有PDF则认为章节已完成
+                const pdfExists = await this.isChapterPdfExists(completeInfo.name, chapterNum);
+                if (pdfExists) {
+                    console.log(`📄 [漫画${mangaId}-章节${chapterNum}] PDF文件已存在，章节已完成`);
+                    continue; // 跳过此章节，认为已完成
+                }
+
                 if (!existingInfo || !existingInfo.chapters.has(chapterNum)) {
                     // 完全缺失的章节
                     missingChapters.push({
@@ -256,7 +294,7 @@ class MangaGapFiller {
                     });
                     this.stats.missingChapters++;
                 } else {
-                    // 检查图片数量是否完整
+                    // 检查图片数量是否完整（图片数量大于等于预期数量即认为完成）
                     const actualPages = existingInfo.chapters.get(chapterNum);
                     if (actualPages < expectedPages) {
                         incompleteChapters.push({
@@ -324,9 +362,9 @@ class MangaGapFiller {
     }
 
     /**
-     * 补充缺失的内容 - 按章节顺序处理
+     * 补充缺失的内容 - 支持并行处理
      */
-    async fillMissingContent(dryRun = false) {
+    async fillMissingContent(dryRun = false, enableParallel = true) {
         if (this.missingContent.length === 0) {
             console.log('\n🎉 没有缺失的内容需要补充！');
             return;
@@ -338,87 +376,226 @@ class MangaGapFiller {
             return;
         }
 
-        console.log('\n📥 开始按顺序补充缺失内容...');
+        if (enableParallel && this.missingContent.length > 1) {
+            console.log('\n📥 开始并行补充缺失内容...');
+            return await this.fillMissingContentInParallel();
+        } else {
+            console.log('\n📥 开始按顺序补充缺失内容...');
+            return await this.fillMissingContentSequentially();
+        }
+    }
 
+    /**
+     * 串行补充缺失内容（原逻辑）
+     */
+    async fillMissingContentSequentially() {
         let processedMangas = 0;
         let successfulChapters = 0;
         let failedChapters = 0;
 
         for (const manga of this.missingContent) {
-            console.log(`\n📖 处理漫画: ${manga.mangaName} (ID: ${manga.mangaId})`);
-
-            // 获取该漫画的完整章节信息，按章节号排序
-            const completeInfo = this.completeInfo.get(manga.mangaId);
-            if (!completeInfo) {
-                console.log(`⚠️ 未找到漫画 ${manga.mangaName} 的完整信息，跳过`);
-                continue;
-            }
-
-            // 按章节号排序
-            const sortedChapters = completeInfo.chapters.sort((a, b) => a.chapter - b.chapter);
-
-            console.log(`📋 开始按顺序处理章节 (共${sortedChapters.length}章)...`);
-
-            // 按顺序处理每个章节
-            for (const chapterInfo of sortedChapters) {
-                const chapterNum = chapterInfo.chapter;
-                const expectedPages = chapterInfo.totalPage;
-
-                // 跳过失败的章节
-                if (expectedPages === 'fail' || expectedPages === null || expectedPages <= 0) {
-                    console.log(`⏭️ 跳过失败章节: 第${chapterNum}章`);
-                    continue;
-                }
-
-                // 检查当前章节状态
-                const existingInfo = this.existingContent.get(manga.mangaId);
-                let needsDownload = false;
-                let downloadReason = '';
-
-                if (!existingInfo || !existingInfo.chapters.has(chapterNum)) {
-                    // 完全缺失的章节
-                    needsDownload = true;
-                    downloadReason = '章节缺失';
-                } else {
-                    // 检查是否不完整
-                    const actualPages = existingInfo.chapters.get(chapterNum);
-                    if (actualPages < expectedPages) {
-                        needsDownload = true;
-                        downloadReason = `不完整 (${actualPages}/${expectedPages}页)`;
-                    } else {
-                        console.log(`✅ 第${chapterNum}章已完整 (${actualPages}页)，跳过`);
-                        continue;
-                    }
-                }
-
-                // 需要下载的章节
-                if (needsDownload) {
-                    try {
-                        console.log(`� 下载第${chapterNum}章 - ${downloadReason}`);
-                        const success = await this.downloader.downloadMangaContent(
-                            manga.mangaId,
-                            manga.mangaName,
-                            chapterNum
-                        );
-
-                        if (success) {
-                            successfulChapters++;
-                            console.log(`✅ 第${chapterNum}章下载成功`);
-                        } else {
-                            failedChapters++;
-                            console.log(`❌ 第${chapterNum}章下载失败`);
-                        }
-                    } catch (error) {
-                        failedChapters++;
-                        console.error(`❌ 下载第${chapterNum}章时出错: ${error.message}`);
-                    }
-                }
-            }
-
+            const result = await this.processSingleMangaMissing(manga);
             processedMangas++;
+            successfulChapters += result.successfulChapters;
+            failedChapters += result.failedChapters;
             console.log(`📊 漫画处理进度: ${processedMangas}/${this.missingContent.length}`);
         }
 
+        this.logFinalStats(processedMangas, successfulChapters, failedChapters);
+        return { processedMangas, successfulChapters, failedChapters };
+    }
+
+    /**
+     * 并行补充缺失内容 - 漫画级别并行
+     */
+    async fillMissingContentInParallel() {
+        console.log(`🚀 开始并行处理 ${this.missingContent.length} 个漫画...`);
+        
+        // 显示浏览器实例池状态
+        this.downloader.logBrowserInstanceStatus();
+        
+        const results = [];
+        let mangaIndex = 0;
+        const maxConcurrent = this.downloader.parallelConfig.maxConcurrent;
+
+        // 创建工作器函数处理单个漫画
+        const createWorker = async (workerId) => {
+            console.log(`👷 启动工作器 ${workerId}`);
+            let workerStats = { processedMangas: 0, successfulChapters: 0, failedChapters: 0 };
+
+            while (mangaIndex < this.missingContent.length) {
+                // 获取下一个漫画任务
+                const currentIndex = mangaIndex++;
+                const manga = this.missingContent[currentIndex];
+
+                if (!manga) break;
+
+                const startTime = Date.now();
+                console.log(`🔄 [${currentIndex + 1}] [工作器 ${workerId}] 开始处理漫画: ${manga.mangaName} (ID: ${manga.mangaId})`);
+
+                try {
+                    const result = await this.processSingleMangaMissing(manga);
+                    const duration = Date.now() - startTime;
+
+                    console.log(`${result.success ? '✅' : '⚠️'} [${currentIndex + 1}] [工作器 ${workerId}] 漫画 "${manga.mangaName}" 处理完成 (耗时: ${(duration / 1000).toFixed(1)}秒)`);
+                    console.log(`    成功章节: ${result.successfulChapters}, 失败章节: ${result.failedChapters}`);
+
+                    workerStats.processedMangas++;
+                    workerStats.successfulChapters += result.successfulChapters;
+                    workerStats.failedChapters += result.failedChapters;
+
+                    results[currentIndex] = {
+                        manga,
+                        result,
+                        success: result.success,
+                        mangaIndex: currentIndex + 1,
+                        duration
+                    };
+
+                } catch (error) {
+                    console.error(`❌ [${currentIndex + 1}] [工作器 ${workerId}] 处理漫画 "${manga.mangaName}" 失败: ${error.message}`);
+                    results[currentIndex] = {
+                        manga,
+                        result: { success: false, error: error.message, successfulChapters: 0, failedChapters: 0 },
+                        success: false,
+                        mangaIndex: currentIndex + 1,
+                        duration: Date.now() - startTime
+                    };
+                }
+
+                // 显示进度
+                const completedCount = results.filter(r => r !== undefined).length;
+                const remainingCount = this.missingContent.length - mangaIndex;
+                console.log(`📊 [工作器 ${workerId}] 进度: ${completedCount}/${this.missingContent.length} 完成，剩余: ${remainingCount}`);
+            }
+
+            console.log(`👷 工作器 ${workerId} 完成，处理了 ${workerStats.processedMangas} 个漫画`);
+            return workerStats;
+        };
+
+        // 启动多个工作器并行处理
+        const maxWorkers = Math.min(maxConcurrent, this.missingContent.length);
+        console.log(`⚡ 启动 ${maxWorkers} 个工作器并行处理漫画...`);
+
+        const workers = [];
+        for (let i = 0; i < maxWorkers; i++) {
+            workers.push(createWorker(i + 1));
+        }
+
+        // 等待所有工作器完成
+        console.log(`⏳ 等待所有工作器完成...`);
+        const workerResults = await Promise.allSettled(workers);
+
+        // 统计最终结果
+        let totalProcessedMangas = 0;
+        let totalSuccessfulChapters = 0;
+        let totalFailedChapters = 0;
+
+        workerResults.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+                totalProcessedMangas += result.value.processedMangas;
+                totalSuccessfulChapters += result.value.successfulChapters;
+                totalFailedChapters += result.value.failedChapters;
+            } else {
+                console.error(`❌ 工作器 ${index + 1} 执行失败: ${result.reason}`);
+            }
+        });
+
+        this.logFinalStats(totalProcessedMangas, totalSuccessfulChapters, totalFailedChapters);
+        return { processedMangas: totalProcessedMangas, successfulChapters: totalSuccessfulChapters, failedChapters: totalFailedChapters };
+    }
+
+    /**
+     * 处理单个漫画的缺失章节
+     */
+    async processSingleMangaMissing(manga) {
+        console.log(`\n📖 处理漫画: ${manga.mangaName} (ID: ${manga.mangaId})`);
+
+        // 获取该漫画的完整章节信息，按章节号排序
+        const completeInfo = this.completeInfo.get(manga.mangaId);
+        if (!completeInfo) {
+            console.log(`⚠️ 未找到漫画 ${manga.mangaName} 的完整信息，跳过`);
+            return { success: false, successfulChapters: 0, failedChapters: 0 };
+        }
+
+        // 按章节号排序
+        const sortedChapters = completeInfo.chapters.sort((a, b) => a.chapter - b.chapter);
+        console.log(`📋 开始按顺序处理章节 (共${sortedChapters.length}章)...`);
+
+        let successfulChapters = 0;
+        let failedChapters = 0;
+
+        // 按顺序处理每个章节
+        for (const chapterInfo of sortedChapters) {
+            const chapterNum = chapterInfo.chapter;
+            const expectedPages = chapterInfo.totalPage;
+
+            // 跳过失败的章节
+            if (expectedPages === 'fail' || expectedPages === null || expectedPages <= 0) {
+                console.log(`⏭️ 跳过失败章节: 第${chapterNum}章`);
+                continue;
+            }
+
+            // 首先检查是否有PDF文件存在，如果有PDF则认为章节已完成
+            const pdfExists = await this.isChapterPdfExists(manga.mangaName, chapterNum);
+            if (pdfExists) {
+                console.log(`📄 第${chapterNum}章PDF文件已存在，跳过下载`);
+                continue;
+            }
+
+            // 检查当前章节状态
+            const existingInfo = this.existingContent.get(manga.mangaId);
+            let needsDownload = false;
+            let downloadReason = '';
+
+            if (!existingInfo || !existingInfo.chapters.has(chapterNum)) {
+                // 完全缺失的章节
+                needsDownload = true;
+                downloadReason = '章节缺失';
+            } else {
+                // 检查是否不完整（图片数量大于等于预期数量即认为完成）
+                const actualPages = existingInfo.chapters.get(chapterNum);
+                if (actualPages < expectedPages) {
+                    needsDownload = true;
+                    downloadReason = `不完整 (${actualPages}/${expectedPages}页)`;
+                } else {
+                    console.log(`✅ 第${chapterNum}章已完整 (${actualPages}页)，跳过`);
+                    continue;
+                }
+            }
+
+            // 需要下载的章节
+            if (needsDownload) {
+                try {
+                    console.log(`📥 下载第${chapterNum}章 - ${downloadReason}`);
+                    const success = await this.downloader.downloadMangaContent(
+                        manga.mangaId,
+                        manga.mangaName,
+                        chapterNum
+                    );
+
+                    if (success) {
+                        successfulChapters++;
+                        console.log(`✅ 第${chapterNum}章下载成功`);
+                    } else {
+                        failedChapters++;
+                        console.log(`❌ 第${chapterNum}章下载失败`);
+                    }
+                } catch (error) {
+                    failedChapters++;
+                    console.error(`❌ 下载第${chapterNum}章时出错: ${error.message}`);
+                }
+            }
+        }
+
+        const success = successfulChapters > 0 || failedChapters === 0;
+        return { success, successfulChapters, failedChapters };
+    }
+
+    /**
+     * 输出最终统计信息
+     */
+    logFinalStats(processedMangas, successfulChapters, failedChapters) {
         console.log('\n📊 补充完成统计:');
         console.log(`   📚 处理的漫画: ${processedMangas}`);
         console.log(`   ✅ 成功的章节: ${successfulChapters}`);
